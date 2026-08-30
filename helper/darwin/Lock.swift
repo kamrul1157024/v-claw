@@ -95,6 +95,12 @@ final class LockView: NSView {
 
     @objc private func unlockTapped() { Lock.shared.attemptUnlock(password: field.stringValue) }
 
+    /// Changes the status line without disturbing anything the user has typed.
+    func setMessage(_ text: String) {
+        status.stringValue = text
+        layoutStack()
+    }
+
     /// Called when the password was wrong. Clears the field rather than leaving a bad
     /// value in place, and keeps focus so retrying needs no extra click.
     func reject(_ text: String) {
@@ -108,6 +114,13 @@ final class LockView: NSView {
     func focusField() {
         guard wantsPassword else { return }
         window?.makeFirstResponder(field)
+    }
+
+    var typed: String { field.stringValue }
+
+    func restore(_ text: String) {
+        field.stringValue = text
+        focusField()
     }
 
     private func layoutStack() {
@@ -258,8 +271,15 @@ final class Lock: NSObject {
     }
 
     // A display plugged in while locked must be covered at once. An uncovered second
-    // screen defeats the entire feature.
-    @objc private func screensChanged() { cover() }
+    // screen defeats the entire feature. Carry any typed text across the rebuild:
+    // losing it here would be the same bug updateMessage used to cause.
+    @objc private func screensChanged() {
+        let typed = (windows.first?.contentView as? LockView)?.typed ?? ""
+        cover()
+        if !typed.isEmpty {
+            (windows.first?.contentView as? LockView)?.restore(typed)
+        }
+    }
 
     func attemptUnlock(password: String) {
         guard policy == "password" else { return finish() }
@@ -325,9 +345,15 @@ final class Lock: NSObject {
     }
 
     /// Keeps the status line current while the screen stays locked.
+    ///
+    /// Updates the label in place. It used to call cover(), which tears down every
+    /// window and rebuilds the views — wiping whatever the user was halfway through
+    /// typing. The app pushes state every five seconds, so any status change during
+    /// entry silently cleared the field and submitted a fragment. That is why the
+    /// first code so often failed and the second worked.
     func updateMessage(_ text: String) {
         guard !windows.isEmpty, text != message else { return }
         message = text
-        cover()
+        windows.forEach { ($0.contentView as? LockView)?.setMessage(text) }
     }
 }
