@@ -75,10 +75,13 @@ func (c *Control) SetDisplaySleep(ctx context.Context, s Scope, minutes int) err
 	return c.set(ctx, s, "displaysleep", minutes)
 }
 
-// absentMeansZero lists keys that pmset omits from `pmset -g` when they are off,
-// rather than reporting them as 0. Treating absence as an error would make a
-// successful release look like a failure and log on every tick.
-var absentMeansZero = map[string]bool{"disablesleep": true}
+// disablesleep is never reported by `pmset -g`, set or not. It is written through
+// pmset but only readable from IORegistry, as IOPMrootDomain's SleepDisabled property.
+//
+// Verifying it against pmset output therefore always read zero, so every successful
+// write was logged as "did not stick" and the daemon never recorded that it was
+// holding. The setting was working the whole time; only the check was wrong.
+const sleepDisabledKey = "disablesleep"
 
 func (c *Control) set(ctx context.Context, s Scope, key string, val int) error {
 	if _, err := c.R.Run(ctx, string(s), key, strconv.Itoa(val)); err != nil {
@@ -102,6 +105,9 @@ func (c *Control) set(ctx context.Context, s Scope, key string, val int) error {
 // the power source in use, so setting the AC value while running on battery reads back
 // the battery value and looks like a failure that never happened.
 func (c *Control) readBack(ctx context.Context, s Scope, key string) (int, error) {
+	if key == sleepDisabledKey {
+		return sleepDisabled(ctx)
+	}
 	if s == All {
 		return c.Get(ctx, key)
 	}
@@ -117,12 +123,29 @@ func (c *Control) readBack(ctx context.Context, s Scope, key string) (int, error
 	}
 	v, ok := vals[key]
 	if !ok {
-		if absentMeansZero[key] {
-			return 0, nil
-		}
 		return 0, fmt.Errorf("pmset: %q not present for scope %q", key, s)
 	}
 	return v, nil
+}
+
+// sleepDisabled reads IOPMrootDomain's SleepDisabled property, the only place the
+// flag can actually be observed.
+func sleepDisabled(ctx context.Context) (int, error) {
+	out, err := exec.CommandContext(ctx, "/usr/sbin/ioreg", "-n", "IOPMrootDomain", "-r").Output()
+	if err != nil {
+		return 0, fmt.Errorf("ioreg: %w", err)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if !strings.Contains(line, "\"SleepDisabled\"") {
+			continue
+		}
+		if strings.Contains(line, "Yes") || strings.Contains(line, "= 1") {
+			return 1, nil
+		}
+		return 0, nil
+	}
+	// Absent from IORegistry means it was never turned on.
+	return 0, nil
 }
 
 // Get reads a live value from `pmset -g`.
@@ -137,9 +160,6 @@ func (c *Control) Get(ctx context.Context, key string) (int, error) {
 	}
 	v, ok := vals[key]
 	if !ok {
-		if absentMeansZero[key] {
-			return 0, nil
-		}
 		return 0, fmt.Errorf("pmset: %q not present in output", key)
 	}
 	return v, nil

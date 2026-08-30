@@ -173,6 +173,30 @@ installs its own `NSApplicationDelegate`. It owns the main run loop in the tray 
 That is the third reason the lock window is a separate process, see
 [04-virtual-lock.md](04-virtual-lock.md).
 
+## Answered: `disablesleep` works, and cannot be read from pmset
+
+Observed on 2026-08-30, macOS 26.6.1, with the daemon holding on AC and the lid shut.
+
+```
+$ ioreg -n IOPMrootDomain -r | grep SleepDisabled
+|   "SleepDisabled" = Yes
+```
+
+The flag takes effect. The machine did not sleep with the lid closed on AC, and
+`pmset -g log` records no sleep event for the period.
+
+But **`pmset -g` never reports `disablesleep`, set or unset.** It can be written through
+pmset and only read from IORegistry, as `IOPMrootDomain`'s `SleepDisabled` property.
+
+That cost real time. v-claw verified the write against pmset output, always read zero,
+and logged `disablesleep did not stick: wrote 1, read back 0` every ten seconds while
+the setting was working perfectly. The daemon also never recorded that it was holding,
+because the failed verification made `hold` return an error. A read-back check is only
+as good as the place it reads from, and this one was reading somewhere the value can
+never appear.
+
+Read it from IORegistry. `internal/pmsetctl.sleepDisabled` does.
+
 ## The open question
 
 > Does a `PreventSystemSleep` assertion alone stop lid-close sleep on Apple Silicon?

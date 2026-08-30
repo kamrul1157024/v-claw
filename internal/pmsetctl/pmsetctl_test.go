@@ -24,56 +24,36 @@ func (f *fake) Run(_ context.Context, args ...string) (string, error) {
 	return "", nil
 }
 
-func TestSetDisableSleepArgs(t *testing.T) {
-	f := &fake{get: " disablesleep 1\n"}
-	c := &Control{R: f}
-
-	if err := c.SetDisableSleep(context.Background(), true); err != nil {
-		t.Fatal(err)
-	}
-
-	want := []string{"-a", "disablesleep", "1"}
-	if got := f.calls[0]; !equal(got, want) {
-		t.Fatalf("args = %v, want %v", got, want)
-	}
-	if got := f.calls[1]; !equal(got, []string{"-g"}) {
-		t.Fatalf("every write must be read back, got %v", got)
-	}
-}
-
+// A managed Mac can revert a value minutes after it is written, so a mismatch on a
+// scoped setting must surface rather than be assumed away.
 func TestReadBackMismatchIsReported(t *testing.T) {
-	// The write appears to succeed but the value reads back as 0. This is what a
-	// managed Mac reverting the setting looks like.
-	f := &fake{get: " disablesleep 0\n"}
+	f := &scopeFake{live: "", custom: "AC Power:\n displaysleep 20\n"}
 	c := &Control{R: f}
 
-	err := c.SetDisableSleep(context.Background(), true)
+	err := c.SetDisplaySleep(context.Background(), AC, 0)
 	var mm *MismatchError
 	if !errors.As(err, &mm) {
 		t.Fatalf("want MismatchError, got %v", err)
 	}
-	if mm.Want != 1 || mm.Have != 0 {
-		t.Fatalf("want 1 have 0, got want %d have %d", mm.Want, mm.Have)
+	if mm.Want != 0 || mm.Have != 20 {
+		t.Fatalf("want 0 have 20, got want %d have %d", mm.Want, mm.Have)
 	}
 }
 
-// pmset omits disablesleep from `pmset -g` when it is off. Reading that as an error
-// made every release look like a failure, and the daemon logged it on every tick.
-func TestAbsentDisableSleepReadsAsZero(t *testing.T) {
-	f := &fake{get: " displaysleep 20\n sleep 0\n"}
+// disablesleep is verified against IORegistry, not pmset, so these paths no longer
+// touch the fake runner's output at all. What matters is that the write itself is
+// still a fixed argument list.
+func TestDisableSleepWriteArgs(t *testing.T) {
+	f := &fake{get: " displaysleep 20\n"}
 	c := &Control{R: f}
+	_ = c.SetDisableSleep(context.Background(), true)
 
-	if err := c.SetDisableSleep(context.Background(), false); err != nil {
-		t.Fatalf("releasing must succeed when pmset omits the key: %v", err)
-	}
-
-	// Turning it on, however, must still be verified.
-	if err := c.SetDisableSleep(context.Background(), true); err == nil {
-		t.Fatal("want MismatchError when the key is absent after writing 1")
+	if got := f.calls[0]; !equal(got, []string{"-a", "disablesleep", "1"}) {
+		t.Fatalf("args = %v", got)
 	}
 }
 
-func TestAbsentKeyStillErrorsForOtherKeys(t *testing.T) {
+func TestMissingKeyStillErrors(t *testing.T) {
 	c := &Control{R: &fake{get: " sleep 0\n"}}
 	if _, err := c.Get(context.Background(), "displaysleep"); err == nil {
 		t.Fatal("a genuinely missing key must not be silently read as zero")
@@ -123,18 +103,6 @@ func (f *scopeFake) Run(_ context.Context, args ...string) (string, error) {
 		return f.live, nil
 	}
 	return "", nil
-}
-
-func TestDisableSleepStillUsesTheLiveView(t *testing.T) {
-	// disablesleep is global rather than per source, so it is read from `pmset -g`.
-	f := &scopeFake{live: " disablesleep 1\n", custom: "AC Power:\n displaysleep 20\n"}
-	c := &Control{R: f}
-	if err := c.SetDisableSleep(context.Background(), true); err != nil {
-		t.Fatal(err)
-	}
-	if got := f.calls[1]; !equal(got, []string{"-g"}) {
-		t.Fatalf("want the live view for a global flag, got %v", got)
-	}
 }
 
 func TestParseIgnoresAnnotatedValues(t *testing.T) {
