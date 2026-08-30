@@ -19,6 +19,7 @@ const (
 	evMode eventKind = iota
 	evBlockLid
 	evKeepDisplay
+	evWarnLid
 	evTimed
 	evLockNow
 	evLockEnabled
@@ -45,6 +46,7 @@ type view struct {
 	glyph                 []byte
 	mode                  state.Mode
 	blockLid, keepDisplay bool
+	warnLid               bool
 
 	lockEnabled bool
 	lockPolicy  state.Policy
@@ -60,6 +62,7 @@ type menu struct {
 	status                *systray.MenuItem
 	off, always, auto     *systray.MenuItem
 	blockLid, keepDisplay *systray.MenuItem
+	warnLid               *systray.MenuItem
 	lidHint               *systray.MenuItem
 
 	lockNow                    *systray.MenuItem
@@ -87,6 +90,8 @@ func (a *app) buildMenu() {
 
 	m.blockLid = systray.AddMenuItemCheckbox("Block lid sleep", "", false)
 	m.keepDisplay = systray.AddMenuItemCheckbox("Keep display on", "", false)
+	m.warnLid = systray.AddMenuItemCheckbox("Warn when the lid closes",
+		"Play a sound if the machine will stay awake", false)
 	m.lidHint = systray.AddMenuItem("", "")
 	m.lidHint.Disable()
 	m.lidHint.Hide()
@@ -135,6 +140,7 @@ func (a *app) buildMenu() {
 		m.auto:           {kind: evMode, mode: state.ModeAuto},
 		m.blockLid:       {kind: evBlockLid},
 		m.keepDisplay:    {kind: evKeepDisplay},
+		m.warnLid:        {kind: evWarnLid},
 		t15:              {kind: evTimed, dur: 15 * time.Minute},
 		t1h:              {kind: evTimed, dur: time.Hour},
 		t4h:              {kind: evTimed, dur: 4 * time.Hour},
@@ -170,6 +176,7 @@ func (m *menu) render(v view) {
 	check(m.auto, v.mode == state.ModeAuto)
 	check(m.blockLid, v.blockLid)
 	check(m.keepDisplay, v.keepDisplay)
+	check(m.warnLid, v.warnLid)
 
 	if v.lidHint == "" {
 		m.lidHint.Hide()
@@ -204,6 +211,7 @@ func (a *app) view(holding bool) view {
 		mode:        a.st.Mode,
 		blockLid:    a.st.BlockLidSleep,
 		keepDisplay: a.st.KeepDisplayOn,
+		warnLid:     a.st.WarnOnLidClose,
 		lockEnabled: a.st.Lock.Enabled,
 		lockPolicy:  a.st.Lock.Policy,
 		lockIdle:    a.st.Lock.IdleMinutes,

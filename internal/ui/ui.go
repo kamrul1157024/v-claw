@@ -33,6 +33,7 @@ type State struct {
 	Mode             string `json:"mode"`
 	BlockLidSleep    bool   `json:"blockLidSleep"`
 	KeepDisplayOn    bool   `json:"keepDisplayOn"`
+	WarnOnLidClose   bool   `json:"warnOnLidClose"`
 	ExpiresInSeconds *int   `json:"expiresInSeconds"`
 	OnAC             bool   `json:"onAC"`
 	Holding          bool   `json:"holding"`

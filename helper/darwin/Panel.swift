@@ -20,6 +20,8 @@ final class Panel: NSObject, NSWindowDelegate {
     private var modeButtons: [String: NSButton] = [:]
     private let blockLid = NSButton(checkboxWithTitle: "Block lid sleep", target: nil, action: nil)
     private let keepDisplay = NSButton(checkboxWithTitle: "Keep display on", target: nil, action: nil)
+    private let warnLid = NSButton(
+        checkboxWithTitle: "Warn with a sound when the lid closes", target: nil, action: nil)
     private let timer = NSPopUpButton()
 
     private let lockEnabled = NSButton(checkboxWithTitle: "Enabled", target: nil, action: nil)
@@ -132,8 +134,20 @@ final class Panel: NSObject, NSWindowDelegate {
         keepDisplay.target = self
         keepDisplay.action = #selector(flagToggled(_:))
         keepDisplay.identifier = NSUserInterfaceItemIdentifier("keep_display_on")
+        warnLid.target = self
+        warnLid.action = #selector(flagToggled(_:))
+        warnLid.identifier = NSUserInterfaceItemIdentifier("warn_on_lid_close")
         rows.append(blockLid)
         rows.append(keepDisplay)
+        rows.append(warnLid)
+
+        let warnWhy = NSTextField(wrappingLabelWithString:
+            "Closing the lid normally means the machine is asleep. When v-claw is "
+                + "holding it awake, a sound is the only thing left that can tell you.")
+        warnWhy.font = .systemFont(ofSize: 10)
+        warnWhy.textColor = .tertiaryLabelColor
+        warnWhy.preferredMaxLayoutWidth = 330
+        rows.append(warnWhy)
 
         timer.removeAllItems()
         timer.addItems(withTitles: timerChoices.map(\.0))
@@ -239,6 +253,7 @@ final class Panel: NSObject, NSWindowDelegate {
         modeButtons.forEach { $0.value.state = ($0.key == s.mode) ? .on : .off }
         blockLid.state = s.blockLidSleep ? .on : .off
         keepDisplay.state = s.keepDisplayOn ? .on : .off
+        warnLid.state = s.warnOnLidClose ? .on : .off
 
         let secs = s.expiresInSeconds ?? 0
         timer.selectItem(at: timerChoices.firstIndex { $0.1 == secs } ?? 0)

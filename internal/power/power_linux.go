@@ -10,6 +10,7 @@ func newController() Controller { return unsupported{} }
 
 func (unsupported) OnAC() (bool, error)           { return false, ErrUnsupported }
 func (unsupported) IdleSeconds() (float64, error) { return 0, ErrUnsupported }
+func (unsupported) LidClosed() (bool, bool)       { return false, false }
 func (unsupported) Hold(Options) error            { return ErrUnsupported }
 func (unsupported) Release() error                { return ErrUnsupported }
 func (unsupported) Holding() bool                 { return false }

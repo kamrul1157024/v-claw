@@ -61,6 +61,12 @@ type State struct {
 	Heartbeat     time.Time  `json:"heartbeat"`
 	Lock          Lock       `json:"lock"`
 
+	// WarnOnLidClose plays a sound when the lid shuts while v-claw is holding the
+	// machine awake. On by default: closing a lid is the universal gesture for "this
+	// is now asleep", and a machine that quietly keeps running inside a bag is the
+	// one genuinely dangerous thing this app can do.
+	WarnOnLidClose bool `json:"warn_on_lid_close"`
+
 	// ShowWindow is a request from the CLI for the running app to open its window.
 	// The app clears it once handled. It lives here rather than in a separate channel
 	// because the state file is already the one thing both processes share, and a
@@ -71,10 +77,11 @@ type State struct {
 
 func Default() State {
 	return State{
-		Mode:          ModeAuto,
-		BlockLidSleep: true,
-		KeepDisplayOn: true,
-		Heartbeat:     time.Now(),
+		Mode:           ModeAuto,
+		BlockLidSleep:  true,
+		KeepDisplayOn:  true,
+		WarnOnLidClose: true,
+		Heartbeat:      time.Now(),
 		Lock: Lock{
 			Enabled: true,
 			Policy:  PolicyNone,
@@ -145,6 +152,16 @@ func Load(path string) (State, error) {
 	// every other setting too.
 	if s.Lock.Policy == policyAuth {
 		s.Lock.Policy = PolicyNone
+	}
+
+	// A bool added after a state file was written unmarshals to false, which for an
+	// opt-out setting silently means "off" for everyone who already had v-claw. Absent
+	// and explicitly false have to be told apart.
+	var probe struct {
+		WarnOnLidClose *bool `json:"warn_on_lid_close"`
+	}
+	if json.Unmarshal(b, &probe) == nil && probe.WarnOnLidClose == nil {
+		s.WarnOnLidClose = Default().WarnOnLidClose
 	}
 	if err := s.Validate(); err != nil {
 		return State{}, err

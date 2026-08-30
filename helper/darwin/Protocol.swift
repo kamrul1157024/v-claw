@@ -23,6 +23,7 @@ struct UIState: Decodable {
     let mode: String
     let blockLidSleep: Bool
     let keepDisplayOn: Bool
+    let warnOnLidClose: Bool
     let expiresInSeconds: Int?
     let onAC: Bool
     let holding: Bool

@@ -41,6 +41,10 @@ type Controller interface {
 	// IdleSeconds is time since the last user input, for the virtual lock idle trigger.
 	IdleSeconds() (float64, error)
 
+	// LidClosed reports whether the lid is shut, and whether this machine has one.
+	// A desktop reports known=false and must not be treated as permanently open.
+	LidClosed() (closed, known bool)
+
 	// Hold keeps the machine awake until Release. Calling it again replaces the
 	// previous options. It must be safe to call when already holding.
 	Hold(Options) error

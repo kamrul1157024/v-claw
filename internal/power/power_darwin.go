@@ -2,6 +2,7 @@ package power
 
 /*
 #cgo LDFLAGS: -framework IOKit -framework CoreFoundation -framework ApplicationServices
+#include <IOKit/IOKitLib.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <IOKit/ps/IOPowerSources.h>
 #include <IOKit/ps/IOPSKeys.h>
@@ -29,6 +30,23 @@ unsigned int vc_assert(const char *type, const char *name) {
 }
 
 void vc_release(unsigned int id) { IOPMAssertionRelease((IOPMAssertionID)id); }
+
+// Reads IOPMrootDomain's AppleClamshellState. Returns 1 closed, 0 open, -1 unknown.
+// The property is absent on desktops, which is why "unknown" is distinct from "open".
+int vc_lid_closed(void) {
+	io_service_t root = IOServiceGetMatchingService(
+		kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"));
+	if (!root) return -1;
+
+	CFBooleanRef v = (CFBooleanRef)IORegistryEntryCreateCFProperty(
+		root, CFSTR("AppleClamshellState"), kCFAllocatorDefault, 0);
+	IOObjectRelease(root);
+	if (!v) return -1;
+
+	int closed = CFBooleanGetValue(v) ? 1 : 0;
+	CFRelease(v);
+	return closed;
+}
 
 double vc_idle_seconds(void) {
 	return CGEventSourceSecondsSinceLastEventType(
@@ -75,6 +93,19 @@ func (c *darwinController) OnAC() (bool, error) {
 		return false, nil
 	default:
 		return false, errors.New("power: IOPSCopyPowerSourcesInfo failed")
+	}
+}
+
+// LidClosed reports whether the lid is shut. The second value is false on hardware
+// with no lid, so a desktop never triggers lid-related behaviour.
+func (c *darwinController) LidClosed() (closed, known bool) {
+	switch C.vc_lid_closed() {
+	case 1:
+		return true, true
+	case 0:
+		return false, true
+	default:
+		return false, false
 	}
 }
 

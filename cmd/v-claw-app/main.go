@@ -115,6 +115,10 @@ type app struct {
 
 	onAC bool
 
+	// lidClosed is the previous reading, so only the open-to-closed transition warns
+	// rather than every poll while the lid stays shut.
+	lidClosed bool
+
 	// restartAuth is read once at start. Automatic login and FileVault do not change
 	// during a session, and both shell out, so re-reading every five seconds would be
 	// waste.
@@ -178,6 +182,8 @@ func (a *app) handle(ev event) {
 		a.st.BlockLidSleep = !a.st.BlockLidSleep
 	case evKeepDisplay:
 		a.st.KeepDisplayOn = !a.st.KeepDisplayOn
+	case evWarnLid:
+		a.st.WarnOnLidClose = !a.st.WarnOnLidClose
 	case evTimed:
 		// A timer is the main defence against forgetting an active hold, so it also
 		// switches to always-awake: a timed hold that only applies on AC is confusing.
@@ -261,6 +267,7 @@ func (a *app) sync() {
 		a.openWindow()
 	}
 
+	a.checkLid(want)
 	a.maybeIdleLock()
 	a.menu.render(a.view(want))
 
@@ -296,6 +303,7 @@ func (a *app) uiState() ui.State {
 		Mode:             string(a.st.Mode),
 		BlockLidSleep:    a.st.BlockLidSleep,
 		KeepDisplayOn:    a.st.KeepDisplayOn,
+		WarnOnLidClose:   a.st.WarnOnLidClose,
 		ExpiresInSeconds: expires,
 		OnAC:             a.onAC,
 		Holding:          a.pow.Holding(),
@@ -309,6 +317,30 @@ func (a *app) uiState() ui.State {
 
 		RestartAuthWarning: a.restartAuth.Warning,
 	}
+}
+
+// checkLid sounds a warning when the lid shuts while v-claw is holding the machine
+// awake.
+//
+// Closing a lid means "this is now asleep" to everyone. When that is not true, nothing
+// on the machine says so: the screen is dark, the menu bar icon is out of sight, and
+// the only symptom is a hot bag hours later. Sound is the one channel still available
+// once the display is gone.
+func (a *app) checkLid(holding bool) {
+	closed, known := a.pow.LidClosed()
+	if !known {
+		return
+	}
+
+	justClosed := closed && !a.lidClosed
+	a.lidClosed = closed
+
+	if !justClosed || !holding || !a.st.WarnOnLidClose {
+		return
+	}
+
+	log.Print("lid closed while holding the machine awake — warning")
+	go warnLidClosed()
 }
 
 func (a *app) maybeIdleLock() {
@@ -349,6 +381,8 @@ func (a *app) handleUI(ev ui.Event) {
 			a.st.BlockLidSleep = ev.Value
 		case "keep_display_on":
 			a.st.KeepDisplayOn = ev.Value
+		case "warn_on_lid_close":
+			a.st.WarnOnLidClose = ev.Value
 		}
 	case "setTimer":
 		a.st.ExpiresAt = nil
