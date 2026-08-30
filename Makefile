@@ -23,7 +23,7 @@ build:
 	$(GO) build -o $(BUILD)/v-claw-app  ./cmd/v-claw-app
 	$(GO) build -o $(BUILD)/v-clawd     ./cmd/v-clawd
 	$(GO) build -o $(BUILD)/v-claw      ./cmd/v-claw
-	$(SWIFTC) -O helper/darwin/main.swift -o $(BUILD)/v-claw-lock
+	$(SWIFTC) -O helper/darwin/*.swift -o $(BUILD)/v-claw-ui
 
 app: build
 	@sh scripts/build-app.sh

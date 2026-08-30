@@ -21,6 +21,7 @@ var version = "0.1.0"
 const usage = `v-claw — hold the lid open
 
 usage:
+  v-claw open                   open the control panel window
   v-claw status                 show what is active right now
   v-claw on [duration]          always awake, optionally with a deadline
   v-claw auto                   awake only while on the power adapter
@@ -48,6 +49,8 @@ func run(args []string) error {
 	}
 
 	switch args[0] {
+	case "open":
+		return openWindow()
 	case "status":
 		return status()
 	case "diagnose":
@@ -72,6 +75,24 @@ func run(args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+// openWindow asks the running app to show its window. Useful when the menu bar is
+// full and the tray icon is hidden behind the notch, which macOS does silently.
+func openWindow() error {
+	s, err := state.Load(paths.StateFile())
+	if err != nil {
+		return fmt.Errorf("v-claw does not appear to be running: %w", err)
+	}
+	if s.Stale(time.Now()) {
+		return fmt.Errorf("v-claw is not running; start it from /Applications")
+	}
+	s.ShowWindow = true
+	if err := state.Save(paths.StateFile(), s); err != nil {
+		return err
+	}
+	fmt.Println("asked v-claw to open its window")
+	return nil
 }
 
 func setMode(m state.Mode, d time.Duration) error {

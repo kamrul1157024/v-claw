@@ -51,6 +51,13 @@ type State struct {
 	ExpiresAt     *time.Time `json:"expires_at"`
 	Heartbeat     time.Time  `json:"heartbeat"`
 	Lock          Lock       `json:"lock"`
+
+	// ShowWindow is a request from the CLI for the running app to open its window.
+	// The app clears it once handled. It lives here rather than in a separate channel
+	// because the state file is already the one thing both processes share, and a
+	// second IPC mechanism for one boolean is not worth the moving parts.
+	// The daemon ignores it.
+	ShowWindow bool `json:"show_window"`
 }
 
 func Default() State {

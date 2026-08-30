@@ -62,6 +62,25 @@ if [ -t 0 ]; then
 	esac
 fi
 
+# If any step below fails, remove everything this script put on the system. A partial
+# install that reports failure while leaving a root binary and a live daemon behind is
+# far worse than no install: the operator believes the machine is clean when it is not.
+rollback() {
+	echo "rolling back" >&2
+	launchctl bootout "system/$LABEL" 2>/dev/null || true
+	rm -f "$EXE" "$PLIST"
+	echo "removed $EXE and $PLIST; nothing of v-claw runs as root" >&2
+}
+
+# Stop any previous instance and wait for launchd to actually let go. bootout is
+# asynchronous, and bootstrapping while the old job lingers fails with error 5.
+launchctl bootout "system/$LABEL" 2>/dev/null || true
+i=0
+while launchctl print "system/$LABEL" >/dev/null 2>&1 && [ $i -lt 20 ]; do
+	sleep 0.25
+	i=$((i + 1))
+done
+
 # State lives at one fixed path so the root daemon never has to guess which user's
 # home directory to watch. The installing user owns it; the daemon only reads it.
 mkdir -p "$DATA"
@@ -70,13 +89,24 @@ chmod 755 "$DATA"
 
 mkdir -p "$(dirname "$EXE")"
 
-launchctl bootout "system/$LABEL" 2>/dev/null || true
+install -m 755 build/v-clawd "$EXE" || { rollback; exit 1; }
+install -m 644 resources/com.vclaw.daemon.plist "$PLIST" || { rollback; exit 1; }
 
-install -m 755 build/v-clawd "$EXE"
-install -m 644 resources/com.vclaw.daemon.plist "$PLIST"
-launchctl bootstrap system "$PLIST"
+if ! launchctl bootstrap system "$PLIST"; then
+	echo "launchctl bootstrap failed" >&2
+	rollback
+	exit 1
+fi
+
+# Never report success on the strength of an exit code alone. Confirm the service is
+# actually running before telling anyone it is installed.
+if ! launchctl print "system/$LABEL" 2>/dev/null | grep -q "state = running"; then
+	echo "the service was loaded but is not running" >&2
+	rollback
+	exit 1
+fi
 
 echo
-echo "installed. verify with:"
+echo "installed and running. verify with:"
 echo "  sudo launchctl print system/$LABEL"
 echo "  v-claw diagnose"

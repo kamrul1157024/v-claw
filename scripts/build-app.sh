@@ -17,13 +17,13 @@ mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 cp resources/Info.plist "$CONTENTS/Info.plist"
 cp build/v-claw-app "$CONTENTS/MacOS/v-claw-app"
 
-# The lock helper ships inside the bundle. internal/lock resolves it relative to the
+# The UI helper ships inside the bundle. internal/ui resolves it relative to the
 # running executable, never through PATH.
-cp build/v-claw-lock "$CONTENTS/MacOS/v-claw-lock"
+cp build/v-claw-ui "$CONTENTS/MacOS/v-claw-ui"
 
 [ -f resources/icons/AppIcon.icns ] && cp resources/icons/AppIcon.icns "$CONTENTS/Resources/"
 
-codesign --force --sign - --timestamp=none "$CONTENTS/MacOS/v-claw-lock"
+codesign --force --sign - --timestamp=none "$CONTENTS/MacOS/v-claw-ui"
 codesign --force --sign - --timestamp=none "$APP"
 
 echo "built $APP"

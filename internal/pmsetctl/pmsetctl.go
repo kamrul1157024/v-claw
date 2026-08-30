@@ -75,6 +75,11 @@ func (c *Control) SetDisplaySleep(ctx context.Context, s Scope, minutes int) err
 	return c.set(ctx, s, "displaysleep", minutes)
 }
 
+// absentMeansZero lists keys that pmset omits from `pmset -g` when they are off,
+// rather than reporting them as 0. Treating absence as an error would make a
+// successful release look like a failure and log on every tick.
+var absentMeansZero = map[string]bool{"disablesleep": true}
+
 func (c *Control) set(ctx context.Context, s Scope, key string, val int) error {
 	if _, err := c.R.Run(ctx, string(s), key, strconv.Itoa(val)); err != nil {
 		return err
@@ -102,6 +107,9 @@ func (c *Control) Get(ctx context.Context, key string) (int, error) {
 	}
 	v, ok := vals[key]
 	if !ok {
+		if absentMeansZero[key] {
+			return 0, nil
+		}
 		return 0, fmt.Errorf("pmset: %q not present in output", key)
 	}
 	return v, nil

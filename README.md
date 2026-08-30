@@ -87,7 +87,18 @@ make explain
 
 ## Usage
 
-The menu bar icon is the whole interface.
+Two front ends, same state. The window is the primary one.
+
+```sh
+v-claw open      # raise the control panel
+```
+
+> [!TIP]
+> If you cannot find the icon in your menu bar, it is probably not your fault. On a Mac
+> with a notch, macOS silently hides status items behind it once the bar is full, with
+> no warning. `v-claw open` always works.
+
+### Menu bar
 
 ```
  Status: AC Power — awake (full)
@@ -106,6 +117,27 @@ The menu bar icon is the whole interface.
  ────────────────────────────────
   Quit v-claw
 ```
+
+### Control panel
+
+Everything the menu has, plus the live status, the tier, and why lid blocking is
+unavailable when it is. Reached from the menu, or with `v-claw open`.
+
+### Permissions
+
+v-claw asks for almost nothing, and the permissions window says so explicitly:
+
+| Permission | | Why |
+|---|---|---|
+| Notifications | needed | Tell you when v-claw releases on its own |
+| Accessibility | optional | Only for the global lock hotkey |
+| Screen Recording | **never** | It does not read your screen |
+| Input Monitoring | **never** | Idle time is measured without an event tap |
+| Full Disk, Camera, Mic, Location | **never** | |
+
+That last group is a design constraint, not a promise. An event tap would have been the
+easy way to measure idle time; it was rejected because it needs Accessibility and looks
+like a keylogger to anyone reviewing the app.
 
 ### Icon states
 

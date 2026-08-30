@@ -57,6 +57,29 @@ func TestReadBackMismatchIsReported(t *testing.T) {
 	}
 }
 
+// pmset omits disablesleep from `pmset -g` when it is off. Reading that as an error
+// made every release look like a failure, and the daemon logged it on every tick.
+func TestAbsentDisableSleepReadsAsZero(t *testing.T) {
+	f := &fake{get: " displaysleep 20\n sleep 0\n"}
+	c := &Control{R: f}
+
+	if err := c.SetDisableSleep(context.Background(), false); err != nil {
+		t.Fatalf("releasing must succeed when pmset omits the key: %v", err)
+	}
+
+	// Turning it on, however, must still be verified.
+	if err := c.SetDisableSleep(context.Background(), true); err == nil {
+		t.Fatal("want MismatchError when the key is absent after writing 1")
+	}
+}
+
+func TestAbsentKeyStillErrorsForOtherKeys(t *testing.T) {
+	c := &Control{R: &fake{get: " sleep 0\n"}}
+	if _, err := c.Get(context.Background(), "displaysleep"); err == nil {
+		t.Fatal("a genuinely missing key must not be silently read as zero")
+	}
+}
+
 func TestDisplaySleepScope(t *testing.T) {
 	f := &fake{get: " displaysleep 0\n"}
 	c := &Control{R: f}

@@ -1,211 +1,140 @@
-// v-claw-lock draws the virtual lock screen.
+// v-claw-ui draws everything v-claw shows: the main window, the permissions window,
+// the virtual lock screen, and notifications.
 //
-// It is a separate process on purpose. The tray app is Go, and a shielding window is
-// deeply native AppKit; the tray process also already gives NSApp to the systray
-// library. Keeping this out of process means a bug here cannot take the tray down, and
-// a kill returns the desktop immediately.
+// It is a separate process from the Go app on purpose. All of this is deeply native
+// AppKit, and Go has no good binding for any of it; in-process it would mean hundreds
+// of lines of Objective-C inside cgo string literals. Out of process, a bug here cannot
+// take down the tray, and a crash while locked simply returns the desktop.
 //
-// The virtual lock is a privacy screen, NOT a security boundary. It is an ordinary
-// window drawn by an ordinary user process. Anyone with physical access defeats it.
+// It also owns notifications, because posting them needs the app bundle's identity.
+// The Go binary alone would post as whatever tool it shelled out to.
 //
-// Protocol, over stdin and stdout, one line each:
-//   -> lock {"policy":"none|auth","message":"AC Power - awake"}
-//   <- unlocked
-//   <- error <text>
+// The helper holds no state. It renders what the Go side sends and reports what the
+// user did, so the two can never disagree about the truth.
+//
+// Protocol: one JSON object per line, both directions. See Protocol.swift.
 import AppKit
-import LocalAuthentication
+import UserNotifications
 
-struct Request: Decodable {
-    let policy: String
-    let message: String
-}
-
-func emit(_ s: String) {
-    print(s)
-    fflush(stdout)
-}
-
-final class LockView: NSView {
-    private let clock = NSTextField(labelWithString: "")
-    private let date = NSTextField(labelWithString: "")
-    private let status = NSTextField(labelWithString: "")
-    private let hint = NSTextField(labelWithString: "")
-    private var timer: Timer?
-
-    init(frame: NSRect, message: String, hintText: String) {
-        super.init(frame: frame)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.black.cgColor
-
-        // Dim rather than allow display sleep. The awake assertions must keep holding,
-        // so the display cannot be permitted to sleep; darkness is the trade.
-        style(clock, size: 76, weight: .thin, alpha: 0.92)
-        style(date, size: 17, weight: .regular, alpha: 0.55)
-        style(status, size: 14, weight: .medium, alpha: 0.45)
-        style(hint, size: 13, weight: .regular, alpha: 0.35)
-
-        status.stringValue = message
-        hint.stringValue = hintText
-        [clock, date, status, hint].forEach(addSubview)
-
-        tick()
-        // Honour Reduce Motion: this only updates text, never animates.
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            self?.tick()
+final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    func applicationDidFinishLaunching(_: Notification) {
+        if Permissions.notificationsAvailable {
+            UNUserNotificationCenter.current().delegate = self
         }
+        readCommands()
+        Event.send("ready")
     }
 
-    required init?(coder: NSCoder) { nil }
-    deinit { timer?.invalidate() }
-
-    private func style(_ f: NSTextField, size: CGFloat, weight: NSFont.Weight, alpha: CGFloat) {
-        f.font = .monospacedDigitSystemFont(ofSize: size, weight: weight)
-        f.textColor = NSColor.white.withAlphaComponent(alpha)
-        f.alignment = .center
-        f.isBezeled = false
-        f.drawsBackground = false
+    // Show notifications even when v-claw is frontmost; the release warning matters
+    // more than the convention of suppressing them.
+    func userNotificationCenter(
+        _: UNUserNotificationCenter,
+        willPresent _: UNNotification,
+        withCompletionHandler done: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        done([.banner, .sound])
     }
 
-    private func tick() {
-        let now = Date()
-        let t = DateFormatter(); t.dateFormat = "HH:mm"
-        let d = DateFormatter(); d.dateFormat = "EEEE d MMMM"
-        clock.stringValue = t.string(from: now)
-        date.stringValue = d.string(from: now)
-        layoutStack()
-    }
-
-    private func layoutStack() {
-        let fields = [clock, date, status, hint]
-        fields.forEach { $0.sizeToFit() }
-        let gaps: [CGFloat] = [18, 56, 10]
-        let total = fields.reduce(0) { $0 + $1.frame.height } + gaps.reduce(0, +)
-
-        var y = (bounds.height + total) / 2
-        for (i, f) in fields.enumerated() {
-            y -= f.frame.height
-            f.frame.origin = NSPoint(x: (bounds.width - f.frame.width) / 2, y: y)
-            if i < gaps.count { y -= gaps[i] }
-        }
-    }
-
-    override var acceptsFirstResponder: Bool { true }
-    override func keyDown(with event: NSEvent) { Lock.shared.attemptUnlock() }
-    override func mouseDown(with event: NSEvent) { Lock.shared.attemptUnlock() }
-}
-
-final class Lock: NSObject {
-    static let shared = Lock()
-
-    private var windows: [NSWindow] = []
-    private var policy = "none"
-    private var message = ""
-    private var authFailures = 0
-
-    func engage(_ req: Request) {
-        policy = req.policy
-        message = req.message
-
-        NSApp.presentationOptions = [
-            .disableProcessSwitching, .disableForceQuit, .disableSessionTermination,
-            .disableHideApplication, .hideDock, .hideMenuBar,
-        ]
-
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(screensChanged),
-            name: NSApplication.didChangeScreenParametersNotification, object: nil)
-
-        guard cover() else {
-            // A partial cover is worse than none: it looks locked while leaving a
-            // screen readable. Refuse rather than mislead.
-            emit("error could not cover every display")
-            NSApp.terminate(nil)
-            return
-        }
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    @discardableResult
-    private func cover() -> Bool {
-        windows.forEach { $0.orderOut(nil) }
-        windows.removeAll()
-
-        let hint = policy == "auth"
-            ? "Touch ID or press any key to unlock"
-            : "Press any key to unlock"
-
-        for screen in NSScreen.screens {
-            let w = NSWindow(contentRect: screen.frame, styleMask: .borderless,
-                             backing: .buffered, defer: false, screen: screen)
-            w.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
-            w.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-            w.isOpaque = true
-            w.backgroundColor = .black
-            w.ignoresMouseEvents = false
-            w.contentView = LockView(frame: NSRect(origin: .zero, size: screen.frame.size),
-                                     message: message, hintText: hint)
-            w.makeKeyAndOrderFront(nil)
-            windows.append(w)
-        }
-
-        guard windows.count == NSScreen.screens.count, !windows.isEmpty else { return false }
-        windows.first?.makeFirstResponder(windows.first?.contentView)
-        return true
-    }
-
-    // A display plugged in while locked must be covered at once. An uncovered second
-    // screen defeats the entire feature.
-    @objc private func screensChanged() { cover() }
-
-    func attemptUnlock() {
-        guard policy == "auth" else { return finish() }
-
-        let ctx = LAContext()
-        ctx.localizedCancelTitle = "Cancel"
-
-        var err: NSError?
-        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else {
-            emit("error authentication unavailable: \(err?.localizedDescription ?? "unknown")")
-            return finish()
-        }
-
-        ctx.evaluatePolicy(.deviceOwnerAuthentication,
-                           localizedReason: "unlock v-claw") { [weak self] ok, _ in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                if ok { return self.finish() }
-
-                // Fail open after repeated failures. A bug here must never lock
-                // someone out of their own machine.
-                self.authFailures += 1
-                if self.authFailures >= 3 {
-                    emit("error authentication failed 3 times, unlocking")
-                    self.finish()
+    /// Reads stdin on a background thread and dispatches to the main thread. AppKit
+    /// must not be touched off the main thread, and stdin must not block the run loop.
+    private func readCommands() {
+        Thread.detachNewThread {
+            while let line = readLine(strippingNewline: true) {
+                guard let data = line.data(using: .utf8),
+                      let cmd = try? JSONDecoder().decode(Command.self, from: data)
+                else {
+                    Event.send("error", ["message": "malformed command"])
+                    continue
                 }
+                DispatchQueue.main.async { handle(cmd) }
             }
+            // Go closed stdin, which means the app is gone. Do not linger: an orphaned
+            // lock window with nothing driving it would trap the user.
+            DispatchQueue.main.async { NSApp.terminate(nil) }
         }
-    }
-
-    private func finish() {
-        windows.forEach { $0.orderOut(nil) }
-        windows.removeAll()
-        NSApp.presentationOptions = []
-        emit("unlocked")
-        NSApp.terminate(nil)
     }
 }
 
-// Read the single lock command before showing anything.
-guard let line = readLine(strippingNewline: true),
-      line.hasPrefix("lock "),
-      let data = String(line.dropFirst(5)).data(using: .utf8),
-      let req = try? JSONDecoder().decode(Request.self, from: data)
-else {
-    emit("error malformed request")
-    exit(1)
+func handle(_ c: Command) {
+    switch c.cmd {
+    case "show":
+        guard let s = c.state else { return }
+        Panel.shared.show(s)
+
+    case "state":
+        guard let s = c.state else { return }
+        Panel.shared.update(s)
+        Lock.shared.updateMessage(s.statusLine)
+
+    case "hide":
+        Panel.shared.close()
+
+    case "permissions":
+        Permissions.shared.show(c.state?.hotkeyEnabled ?? false)
+
+    case "lock":
+        Lock.shared.engage(policy: c.policy ?? "none", message: c.message ?? "")
+
+    case "unlock":
+        Lock.shared.forceUnlock()
+
+    case "notify":
+        postNotification(title: c.title ?? "v-claw", body: c.body ?? "")
+
+    case "diagnostics":
+        showDiagnostics(c.text ?? "")
+
+    case "quit":
+        NSApp.terminate(nil)
+
+    default:
+        Event.send("error", ["message": "unknown command \(c.cmd)"])
+    }
+}
+
+func postNotification(title: String, body: String) {
+    guard Permissions.notificationsAvailable else {
+        Event.send("error", ["message": "notifications need the app bundle; run the installed copy"])
+        return
+    }
+    let content = UNMutableNotificationContent()
+    content.title = title
+    content.body = body
+
+    let req = UNNotificationRequest(
+        identifier: UUID().uuidString, content: content, trigger: nil)
+    UNUserNotificationCenter.current().add(req) { err in
+        if let err { Event.send("error", ["message": "notify: \(err.localizedDescription)"]) }
+    }
+}
+
+func showDiagnostics(_ text: String) {
+    let w = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 620, height: 520),
+        styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+    w.title = "v-claw diagnostics"
+    w.isReleasedWhenClosed = false
+
+    let view = NSTextView()
+    view.string = text
+    view.isEditable = false
+    view.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+    view.textContainerInset = NSSize(width: 12, height: 12)
+
+    let scroll = NSScrollView()
+    scroll.documentView = view
+    scroll.hasVerticalScroller = true
+    w.contentView = scroll
+    w.center()
+    w.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
 }
 
 let app = NSApplication.shared
+// .accessory keeps v-claw out of the Dock and the app switcher. The Go process owns
+// the menu bar item; this helper only ever shows windows.
 app.setActivationPolicy(.accessory)
-Lock.shared.engage(req)
+let delegate = Delegate()
+app.delegate = delegate
+Permissions.requestQuietly()
 app.run()

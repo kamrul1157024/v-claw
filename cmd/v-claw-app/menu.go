@@ -10,6 +10,7 @@ import (
 
 	"github.com/kamrul1157024/v-claw/internal/icon"
 	"github.com/kamrul1157024/v-claw/internal/state"
+	"github.com/kamrul1157024/v-claw/internal/ui"
 )
 
 type eventKind int
@@ -23,6 +24,9 @@ const (
 	evLockEnabled
 	evLockPolicy
 	evLockIdle
+	evOpenWindow
+	evPermissions
+	evDiagnostics
 	evQuit
 )
 
@@ -107,7 +111,21 @@ func (a *app) buildMenu() {
 	m.idle15 = lock.AddSubMenuItemCheckbox("Lock after 15 min idle", "", false)
 	systray.AddSeparator()
 
+	openWin := systray.AddMenuItem("Open v-claw…", "Full controls in a window")
+	perms := systray.AddMenuItem("Permissions…", "")
+	diagItem := systray.AddMenuItem("Diagnostics…", "")
+	systray.AddSeparator()
+
 	m.quit = systray.AddMenuItem("Quit v-claw", "")
+
+	// Without the helper there are no windows to open, so say so rather than let the
+	// items look broken when clicked.
+	if !ui.Available() {
+		for _, it := range []*systray.MenuItem{openWin, perms, diagItem} {
+			it.Disable()
+		}
+		openWin.SetTitle("Open v-claw… (helper missing)")
+	}
 
 	a.menu = m
 
@@ -128,6 +146,9 @@ func (a *app) buildMenu() {
 		m.idleOff:     {kind: evLockIdle, idleMinutes: 0},
 		m.idle5:       {kind: evLockIdle, idleMinutes: 5},
 		m.idle15:      {kind: evLockIdle, idleMinutes: 15},
+		openWin:       {kind: evOpenWindow},
+		perms:         {kind: evPermissions},
+		diagItem:      {kind: evDiagnostics},
 		m.quit:        {kind: evQuit},
 	}
 	for item, ev := range clicks {

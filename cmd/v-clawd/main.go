@@ -32,6 +32,8 @@ import (
 const tick = 10 * time.Second
 
 func main() {
+	restore := flag.Bool("restore", false,
+		"put the recorded original settings back, then exit; used by uninstall")
 	flag.Parse()
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
 	log.SetPrefix("v-clawd: ")
@@ -43,6 +45,19 @@ func main() {
 	d := &daemon{
 		pm:  pmsetctl.New(),
 		pow: power.New(),
+	}
+
+	// Uninstall calls this before deleting the binary. Relying on the running daemon
+	// to restore on SIGTERM is not enough: if it already crashed or was killed, the
+	// machine would keep v-claw's settings forever.
+	if *restore {
+		rctx, rcancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer rcancel()
+		if err := d.release(rctx); err != nil {
+			log.Fatalf("restore failed: %v", err)
+		}
+		log.Print("original settings restored")
+		return
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
