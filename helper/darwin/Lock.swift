@@ -82,6 +82,9 @@ final class LockView: NSView, NSTextFieldDelegate {
         useRecovery.font = .systemFont(ofSize: 12)
         useRecovery.target = self
         useRecovery.action = #selector(enterRecovery)
+        // Never offer recovery with no seed stored. A code cannot be checked against
+        // nothing, so the button would lead only to a screen demanding digits that can
+        // never be right.
         useRecovery.isHidden = !(wantsPassword && TOTP.isConfigured)
 
         style(countdown, size: 12, weight: .regular, alpha: 0.55)
@@ -96,7 +99,7 @@ final class LockView: NSView, NSTextFieldDelegate {
         style(recovery, size: 11, weight: .regular, alpha: 0.30)
         recovery.stringValue = TOTP.isConfigured
             ? "Enter a code from your authenticator, or restart the Mac"
-            : "Restart the Mac to clear this password"
+            : "No recovery code is set up. Restart the Mac to clear this password."
         recovery.isHidden = !wantsPassword
 
         [clock, date, status, field, error, unlock, useRecovery, countdown, recovery]

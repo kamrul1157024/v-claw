@@ -3,6 +3,14 @@
 import CommonCrypto
 import Foundation
 
+// Refuse to run against the real secrets. This file links the app's own TOTP code, so
+// without an override it reads and writes the live seed — and TOTP.forget() below once
+// destroyed a real authenticator enrolment on a working machine.
+guard ProcessInfo.processInfo.environment["VCLAW_DIR"] != nil else {
+    print("refusing to run: set VCLAW_DIR to a scratch directory first")
+    exit(2)
+}
+
 func phoneCode(secret: String, step: Int64) -> String {
     let alpha = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
     var key = Data(), buf = 0, bits = 0

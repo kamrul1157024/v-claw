@@ -260,7 +260,21 @@ enum TOTP {
 
 /// Shared file location and permissions for both secrets.
 enum Storage {
+    /// Where secrets live.
+    ///
+    /// VCLAW_DIR overrides it, and exists for one reason: a test that links this file
+    /// otherwise reads and writes the real secrets. One did, and calling TOTP.forget()
+    /// at the end of it destroyed a live authenticator enrolment on the machine it was
+    /// running on. The phone still had the seed, v-claw had nothing, and no code could
+    /// ever match again.
+    ///
+    /// Anything that links TOTP.swift outside the app must set this.
     static var dir: URL {
+        if let override = ProcessInfo.processInfo.environment["VCLAW_DIR"] {
+            let url = URL(fileURLWithPath: override)
+            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            return url
+        }
         let shared = "/usr/local/var/v-claw"
         if FileManager.default.fileExists(atPath: shared) {
             return URL(fileURLWithPath: shared)

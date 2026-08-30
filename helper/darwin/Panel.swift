@@ -220,8 +220,10 @@ final class Panel: NSObject, NSWindowDelegate {
         noRecovery.font = .systemFont(ofSize: 11, weight: .medium)
         noRecovery.textColor = .systemOrange
         noRecovery.preferredMaxLayoutWidth = 330
-        noRecovery.stringValue = "⚠︎ No recovery code. If you forget this password the "
-            + "only way back in is restarting, which loses whatever is running."
+        noRecovery.stringValue = "\u{26A0}\u{FE0E} No recovery code stored. If you forget "
+            + "this password the only way back in is restarting, which ends whatever is "
+            + "running. If your authenticator still lists v-claw, that entry is stale — "
+            + "set one up again."
         noRecovery.isHidden = true
         rows.append(noRecovery)
 
