@@ -109,19 +109,21 @@ The menu bar icon is the whole interface.
 
 ### Icon states
 
-<img src="docs/images/states.png" alt="icon states" width="320">
+The hand never changes. The badge tells you what is happening.
 
-| | State | Meaning |
-|---|---|---|
-| 1 | **Off**, grey | v-claw is changing nothing |
-| 2 | **Armed**, orange outline | Auto mode, on battery, waiting for the adapter |
-| 3 | **Active**, orange filled | Sleep is blocked right now |
-| 4 | **Basic**, gap in the bar | Active, but lid blocking is best effort — the helper is not installed |
-| 5 | **Overridden**, red | Something is overriding v-claw. Run `v-claw diagnose` |
+<img src="docs/images/states.png" alt="v-claw icon states: off, armed, active, basic, overridden" width="400">
 
-The claw grips a bar. The bar is the lid.
+| | State | Badge | Meaning |
+|---|---|---|---|
+| 1 | **Off** | grey, hand greyed out | v-claw is changing nothing |
+| 2 | **Armed** | amber, hollow | Auto mode, on battery, waiting for the adapter |
+| 3 | **Active** | green | Sleep is blocked right now |
+| 4 | **Basic** | amber, solid | Holding, but lid blocking is best effort — the helper is not installed |
+| 5 | **Overridden** | red | Something is overriding v-claw. Run `v-claw diagnose` |
 
-Two signals carry the state, colour and fill, so neither is load-bearing alone.
+Three signals carry the state — hand colour, badge colour, and badge fill — so none is
+load-bearing on its own, and the states stay readable at 18 px and without colour
+vision.
 
 ### Command line
 

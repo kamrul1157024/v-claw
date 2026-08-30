@@ -1,10 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18">
-  <g fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M 7.6 9.2 C 6.4 7.6 5.4 6.2 4.9 4.9"/><path d="M 9 9.2 L 9 4.4"/><path d="M 10.4 9.2 C 11.6 7.6 12.6 6.2 13.1 4.9"/>
-    <path d="M 9 9.2 L 9 12.4"/>
+  <mask id="badge">
+    <rect width="18" height="18" fill="#fff"/>
+    <circle cx="13.9" cy="13.9" r="4.9" fill="#000"/>
+  </mask>
+  <g mask="url(#badge)">
+    <g stroke="#F26722" stroke-width="2.3" stroke-linecap="round" fill="none">
+      <path d="M 4.2 9.4 L 4.2 4.5"/>
+      <path d="M 7.3 9.4 L 7.3 2.5"/>
+      <path d="M 10.4 9.4 L 10.4 4.1"/>
+      <path d="M 2.7 10.9 L 1.5 7.9"/>
+    </g>
+    <rect x="2.5" y="8.7" width="9.4" height="5.7" rx="2.4" fill="#F26722"/>
   </g>
-  <rect x="6.1" y="12.1" width="5.8" height="3.0" rx="1.5" fill="#000"/>
-  <rect x="2.4" y="1.5" width="13.2" height="2.0" rx="1.0" fill="#000"/>
-  <path d="M 2.8 15.2 L 15.2 2.8" stroke="#000" stroke-width="2.8" stroke-linecap="round"/>
-  <path d="M 2.8 15.2 L 15.2 2.8" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/>
+  <circle cx="13.9" cy="13.9" r="3.6" fill="#FF3B30"/><path d="M 12.1 13.9 L 15.7 13.9" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
 </svg>
