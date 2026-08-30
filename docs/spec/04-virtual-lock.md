@@ -99,14 +99,36 @@ auto-unlock nor a dead end, and no such escape has been found.
 
 - **Never the password.** A random 16-byte salt and a PBKDF2-HMAC-SHA256 hash,
   310,000 rounds.
-- **In the login Keychain**, so it is encrypted at rest. Never in `state.json`, which
-  is world-readable by design.
+- **In a 0600 file** beside the state, never in `state.json`, which is world-readable
+  by design.
 - **Never over the protocol.** The Swift helper owns it end to end; the Go side never
   sees it.
 - Verification is a constant-time compare. Repeated failures back off, up to 3 seconds.
 
-There is no auto-unlock after N failures, for the reason above. After five, the lock
-screen says how to get out instead.
+**Not the Keychain, and this matters.** It was the first implementation and it had to
+be removed. v-claw is built from source and ad-hoc signed, so every rebuild carries a
+different code identity; the Keychain treats each one as a different application and
+raises an authorisation prompt on read. Behind a full-screen shield that prompt is
+invisible and the call blocks forever. Measured: the read never returned.
+
+A blocking call anywhere the lock screen depends on it is unacceptable, because there
+is no escape valve to catch it. A file is weaker at rest and that is the accepted
+trade: what is stored is a hash rather than the secret, the disk is covered by
+FileVault, and this was never a security boundary.
+
+### No escape valves
+
+There is no auto-unlock. Not after N failures, not on error, not when something looks
+broken. A valve that fires when "something went wrong" is a valve an attacker can
+provoke, and that is exactly how the Touch ID option became defeatable.
+
+One safety measure exists and it runs **before** the lock, not after: if the window
+cannot accept keyboard input, v-claw refuses to lock at all. Declining to create a
+broken lock is not a bypass. Opening an existing one is.
+
+Recovery is a restart, which macOS authenticates. That is the only way out, and the
+lock screen says so permanently — not after five failures, because someone who cannot
+type never reaches five failures, and they are exactly the person who needs to know.
 
 ### Why restart is a recovery path and not a bypass
 

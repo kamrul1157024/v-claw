@@ -211,8 +211,9 @@ looks like, and that is not a habit worth building. A Touch ID option existed an
 removed: the system prompt has a Cancel button, so it needed a fail-open valve, and that
 valve was itself a bypass — cancel three times and the lock opened.
 
-The password is stored as a salted PBKDF2 hash in the login Keychain, never in plain
-text and never in `state.json`.
+The password is stored as a salted PBKDF2 hash in a `0600` file, never in plain text and
+never in `state.json`. There are **no escape valves** — nothing auto-unlocks, because a
+valve that fires when something looks broken is a valve an attacker can provoke.
 
 **Forgot it? Restart the Mac.** The password is bound to the current boot, so a restart
 clears it. That works while you are staring at the locked screen — no terminal, no

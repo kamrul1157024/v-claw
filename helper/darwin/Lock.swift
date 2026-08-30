@@ -12,6 +12,7 @@ final class LockView: NSView {
     private let status = NSTextField(labelWithString: "")
     private let field = NSSecureTextField()
     private let error = NSTextField(labelWithString: "")
+    private let recovery = NSTextField(labelWithString: "")
     private let unlock = NSButton()
     private var timer: Timer?
     private let wantsPassword: Bool
@@ -52,7 +53,14 @@ final class LockView: NSView {
         error.textColor = .systemRed
         error.isHidden = true
 
-        [clock, date, status, field, error, unlock].forEach(addSubview)
+        // Always on screen for a password lock, never only after N failures. Someone
+        // who cannot type at all never reaches a failure count, and they are exactly
+        // the person who needs to know the way out.
+        style(recovery, size: 11, weight: .regular, alpha: 0.30)
+        recovery.stringValue = "Restart the Mac to clear this password"
+        recovery.isHidden = !wantsPassword
+
+        [clock, date, status, field, error, unlock, recovery].forEach(addSubview)
 
         tick()
         // Honour Reduce Motion: this only updates text, never animates.
@@ -103,6 +111,7 @@ final class LockView: NSView {
         if wantsPassword { fields.append(field) }
         if !error.isHidden { fields.append(error) }
         fields.append(unlock)
+        if wantsPassword { fields.append(recovery) }
 
         for f in fields where f !== field {
             (f as? NSControl)?.sizeToFit()
@@ -135,6 +144,18 @@ final class LockView: NSView {
     }
 }
 
+/// A borderless NSWindow returns false from canBecomeKey, so it never becomes the key
+/// window and its text field never receives a single keystroke. That made the password
+/// lock impossible to unlock from the keyboard: the screen was covered, the field was
+/// visible, and typing did nothing.
+///
+/// This is the trap the whole design is supposed to make impossible, so the override is
+/// not optional and the guard in cover() checks it actually took effect.
+final class LockWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 final class Lock: NSObject {
     static let shared = Lock()
 
@@ -165,6 +186,21 @@ final class Lock: NSObject {
             return
         }
         NSApp.activate(ignoringOtherApps: true)
+        reportInputState()
+    }
+
+    /// Reports, once, whether the lock actually took keyboard focus.
+    ///
+    /// Log only. It changes nothing, because there is no escape valve by design: a
+    /// valve that fires when "something went wrong" is a valve an attacker can provoke.
+    /// But with no valve, evidence matters — if a lock ever swallows keystrokes again,
+    /// this leaves a record instead of a mystery.
+    private func reportInputState() {
+        guard policy == "password", LockPassword.isSet else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let w = self?.windows.first else { return }
+            Event.send("lockInput", ["keyWindow": w.isKeyWindow, "canBecomeKey": w.canBecomeKey])
+        }
     }
 
     @discardableResult
@@ -179,8 +215,8 @@ final class Lock: NSObject {
         let wantsPassword = policy == "password" && LockPassword.isSet
 
         for screen in NSScreen.screens {
-            let w = NSWindow(contentRect: screen.frame, styleMask: .borderless,
-                             backing: .buffered, defer: false, screen: screen)
+            let w = LockWindow(contentRect: screen.frame, styleMask: .borderless,
+                               backing: .buffered, defer: false, screen: screen)
             w.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
             w.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
             w.isOpaque = true
@@ -194,8 +230,26 @@ final class Lock: NSObject {
         }
 
         guard windows.count == NSScreen.screens.count, !windows.isEmpty else { return false }
-        windows.first?.makeFirstResponder(windows.first?.contentView)
-        (windows.first?.contentView as? LockView)?.focusField()
+
+        let first = windows.first
+        first?.makeKeyAndOrderFront(nil)
+        first?.makeFirstResponder(first?.contentView)
+        (first?.contentView as? LockView)?.focusField()
+
+        // Refuse to lock behind a password the user cannot type. This is the only
+        // safety measure here, and it deliberately runs *before* the lock exists
+        // rather than after: declining to create a broken lock is not a bypass, while
+        // anything that opens an active one is. There is no escape valve once locked —
+        // a valve that fires on "something went wrong" is a valve an attacker can
+        // provoke. Recovery is a restart, which macOS authenticates.
+        //
+        // Test canBecomeKey, not isKeyWindow: activation is asynchronous, so the window
+        // is legitimately not yet key at this point and checking that would reject
+        // every password lock.
+        if wantsPassword, let w = first, !w.canBecomeKey {
+            Event.send("error", ["message": "the lock window cannot take keyboard input; refusing to lock"])
+            return false
+        }
         return true
     }
 
@@ -224,13 +278,8 @@ final class Lock: NSObject {
         // No auto-unlock after N failures. An earlier version did that as a safety
         // valve and it was simply a bypass: anyone could fail three times on purpose
         // and walk in. Tell the user how to get out instead of opening the door.
-        // Recovery has to be something anyone can do while staring at this screen,
-        // with no terminal and no second machine. Restarting clears the password,
-        // because the stored record is bound to the current boot.
-        let text = authFailures >= 5
-            ? "Incorrect password.  Forgotten it? Restart the Mac — that clears it."
-            : "Incorrect password"
-        windows.forEach { ($0.contentView as? LockView)?.reject(text) }
+        // The way out is on screen permanently, so this only has to report the failure.
+        windows.forEach { ($0.contentView as? LockView)?.reject("Incorrect password") }
 
         // A wrong password must cost something, or the lock is brute-forced by holding
         // a key down. PBKDF2 already makes each attempt slow; this makes repeated ones

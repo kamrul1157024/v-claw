@@ -8,8 +8,19 @@
 //
 // What is stored, and where:
 //   * Never the password. A random 16-byte salt and a PBKDF2-HMAC-SHA256 hash.
-//   * In the login Keychain, so it is encrypted at rest and never touches state.json,
-//     which is world-readable by design.
+//   * In a 0600 file next to the state, never in state.json, which is world-readable
+//     by design.
+//
+// Not the Keychain, though that was the first attempt. v-claw is built from source and
+// ad-hoc signed, so every rebuild has a different code identity and the Keychain treats
+// it as a different application: reading the item raises an authorisation prompt. Behind
+// a full-screen lock that prompt is invisible and the call blocks forever, which traps
+// the user with no way out. A blocking call is unacceptable anywhere the lock screen
+// depends on it.
+//
+// A file is weaker at rest, and that is an accepted trade. What is stored is a
+// 310,000-round PBKDF2 hash rather than the secret, the disk is covered by FileVault,
+// and the virtual lock was never a security boundary.
 //
 // Forgetting it costs a restart, and nothing more. The password is bound to the current
 // boot: the stored record carries the boot time, and a record from an earlier boot is
@@ -28,8 +39,18 @@ import Foundation
 import Security
 
 enum LockPassword {
-    private static let service = "com.vclaw.virtual-lock"
-    private static let account = "primary"
+    /// Beside the state file, so it follows the same directory resolution.
+    private static var file: URL {
+        let dir = ProcessInfo.processInfo.environment["VCLAW_DIR"]
+            ?? "/usr/local/var/v-claw"
+        var url = URL(fileURLWithPath: dir)
+        if !FileManager.default.fileExists(atPath: dir) {
+            url = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support/v-claw")
+            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
+        return url.appendingPathComponent("lock.secret")
+    }
 
     private static let saltBytes = 16
     private static let hashBytes = 32
@@ -64,7 +85,7 @@ enum LockPassword {
 
     @discardableResult
     static func clear() -> Bool {
-        SecItemDelete(baseQuery() as CFDictionary)
+        try? FileManager.default.removeItem(at: file)
         return true
     }
 
@@ -91,23 +112,17 @@ enum LockPassword {
         return diff == 0
     }
 
-    // MARK: keychain
-
-    private static func baseQuery() -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-    }
+    // MARK: storage
 
     private static func store(_ blob: Data) -> Bool {
-        SecItemDelete(baseQuery() as CFDictionary)
-        var item = baseQuery()
-        item[kSecValueData as String] = blob
-        // Available without unlocking anything extra, but never leaves this machine.
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+        do {
+            try blob.write(to: file, options: [.atomic, .completeFileProtection])
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: file.path)
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// Seconds since the epoch at which this machine last booted. Records carrying any
@@ -126,13 +141,7 @@ enum LockPassword {
     }
 
     private static func load() -> Data? {
-        var q = baseQuery()
-        q[kSecReturnData as String] = true
-        q[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var out: CFTypeRef?
-        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
-              let blob = out as? Data,
+        guard let blob = try? Data(contentsOf: file),
               blob.count == saltBytes + hashBytes + bootBytes
         else { return nil }
 

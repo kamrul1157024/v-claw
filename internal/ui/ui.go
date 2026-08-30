@@ -62,6 +62,10 @@ type Event struct {
 	Enabled     *bool  `json:"enabled"`
 	IdleMinutes *int   `json:"idleMinutes"`
 	Message     string `json:"message"`
+
+	// Reported once when a password lock engages. Diagnostic only.
+	KeyWindow    bool `json:"keyWindow"`
+	CanBecomeKey bool `json:"canBecomeKey"`
 }
 
 type command struct {
@@ -183,8 +187,15 @@ func (u *UI) read(cmd *exec.Cmd, out io.Reader) {
 			log.Printf("ui helper: unreadable event %q", sc.Text())
 			continue
 		}
-		if ev.Ev == "error" {
+		switch ev.Ev {
+		case "error":
 			log.Printf("ui helper: %s", ev.Message)
+		case "lockInput":
+			// No failsafe acts on this. It exists so a lock that swallows keystrokes
+			// leaves evidence rather than a mystery.
+			if !ev.KeyWindow {
+				log.Printf("lock window did not take keyboard focus (canBecomeKey=%v)", ev.CanBecomeKey)
+			}
 		}
 		select {
 		case u.events <- ev:
