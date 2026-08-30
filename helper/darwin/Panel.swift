@@ -454,7 +454,7 @@ final class Panel: NSObject, NSWindowDelegate {
                 return
             }
 
-            guard TOTP.commit(secret) else {
+            guard TOTP.commit(secret, confirmedWith: typed) else {
                 return self.warn("Could not save the recovery secret.")
             }
             self.setRecovery.title = "Recovery code ✓"

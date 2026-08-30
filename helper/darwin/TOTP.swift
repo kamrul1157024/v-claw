@@ -81,11 +81,20 @@ enum TOTP {
         return false
     }
 
-    /// Persists a seed the user has just proved they hold.
+    /// The step in force right now, so a caller can pin a floor against it.
+    static var currentStep: Int64 { Int64(Date().timeIntervalSince1970) / period }
+
+    /// Persists a seed the user has just proved they hold, and burns the code that
+    /// proved it.
+    ///
+    /// Without the burn the confirmation code stays valid for the rest of its window,
+    /// so anyone who watched it being typed during setup could lock the screen and walk
+    /// back in with the same digits.
     @discardableResult
-    static func commit(_ secret: String) -> Bool {
+    static func commit(_ secret: String, confirmedWith code: String) -> Bool {
         guard Storage.write(Data(secret.utf8), to: seedFile) else { return false }
         try? FileManager.default.removeItem(at: usedFile)
+        _ = verify(code)
         return true
     }
 
@@ -118,15 +127,27 @@ enum TOTP {
     ///
     /// Without the burn, a code stays valid for its whole window, so anyone who watched
     /// it being typed could reuse it. One use per step closes that.
-    static func verify(_ entered: String) -> Bool {
+    /// - Parameter notBefore: refuse any code generated at or before this step.
+    ///   Used to guarantee the code came from *after* the user asked to recover, so a
+    ///   code someone glimpsed earlier is worthless even inside the skew window.
+    static func verify(_ entered: String, notBefore: Int64? = nil) -> Bool {
         let cleaned = entered.filter(\.isNumber)
         guard cleaned.count == digits, let key = secret() else { return false }
 
         let step = Int64(Date().timeIntervalSince1970) / period
         var sawUsed = false
+        var sawTooOld = false
 
         for offset in -stepsBack ... stepsForward {
             let candidate = step + offset
+
+            if let floor = notBefore, candidate < floor {
+                // Right digits, but from a code that existed before recovery started.
+                if constantTimeEqual(code(key: key, step: candidate), cleaned) {
+                    sawTooOld = true
+                }
+                continue
+            }
             let matches = constantTimeEqual(code(key: key, step: candidate), cleaned)
             guard matches else { continue }
 
@@ -141,7 +162,11 @@ enum TOTP {
             return true
         }
 
-        lastRejection = sawUsed ? "code already used" : "no matching code in the window"
+        switch true {
+        case sawTooOld: lastRejection = "code predates the recovery request"
+        case sawUsed: lastRejection = "code already used"
+        default: lastRejection = "no matching code in the window"
+        }
         return false
     }
 

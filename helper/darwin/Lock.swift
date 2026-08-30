@@ -160,6 +160,7 @@ final class LockView: NSView {
     /// that was already half spent when they looked at it.
     @objc private func enterRecovery() {
         recoveryMode = true
+        Lock.shared.armRecovery()
         useRecovery.isHidden = true
         error.isHidden = true
         field.stringValue = ""
@@ -284,6 +285,10 @@ final class Lock: NSObject {
     private var message = ""
     private var authFailures = 0
 
+    /// Codes at or before this step are refused. Pinned when the user asks to recover,
+    /// so only a code produced afterwards counts.
+    private var recoveryFloor: Int64?
+
     func engage(policy: String, message: String) {
         guard windows.isEmpty else { return }
         self.policy = policy
@@ -389,6 +394,12 @@ final class Lock: NSObject {
         attemptPassword(password)
     }
 
+    /// Called when the user opts into the recovery flow. Everything from the current
+    /// step backwards is dead from here on.
+    func armRecovery() {
+        recoveryFloor = TOTP.currentStep + 1
+    }
+
     /// v-claw's own password, never the macOS account password. See LockPassword.
     private func attemptPassword(_ attempt: String) {
         // With no password configured the lock cannot be a password lock. Fail open
@@ -396,16 +407,24 @@ final class Lock: NSObject {
         guard LockPassword.isSet else { return finish() }
         guard !attempt.isEmpty else { return }
 
-        if LockPassword.verify(attempt) {
-            return finish()
+        let recovering = (windows.first?.contentView as? LockView)?.isRecovering ?? false
+
+        // The password field takes the password and nothing else. Letting it also
+        // accept codes would hand anyone a way around the recovery gate: type the code
+        // showing on the phone and never wait for a fresh one.
+        if !recovering {
+            if LockPassword.verify(attempt) {
+                return finish()
+            }
+            return refuse(attempt, recovering: false)
         }
 
-        // A code from the authenticator also gets you in. It is a second credential
-        // rather than an escape valve: it needs the phone holding the seed, and each
-        // code lasts about a minute. It exists because the other way out is a restart,
-        // and a restart destroys the long-running work this machine is being kept
-        // awake for in the first place.
-        if TOTP.isConfigured, TOTP.verify(attempt) {
+        // A code from the authenticator, and only one minted after the user asked to
+        // recover. It is a second credential rather than an escape valve: it needs the
+        // phone holding the seed, and each code lasts about a minute. It exists because
+        // the other way out is a restart, and a restart destroys the long-running work
+        // this machine is being kept awake for in the first place.
+        if TOTP.isConfigured, TOTP.verify(attempt, notBefore: recoveryFloor) {
             let skew = TOTP.lastSkewSeconds
             if skew != 0 {
                 // Worth saying out loud: a drifting phone clock breaks every other
@@ -420,6 +439,10 @@ final class Lock: NSObject {
             return finish()
         }
 
+        refuse(attempt, recovering: true)
+    }
+
+    private func refuse(_ attempt: String, recovering: Bool) {
         authFailures += 1
 
         // No auto-unlock after N failures. An earlier version did that as a safety
@@ -427,14 +450,15 @@ final class Lock: NSObject {
         // and walk in. Tell the user how to get out instead of opening the door.
         // The way out is on screen permanently, so this only has to report the failure.
         var msg = "Incorrect password"
-        if TOTP.isConfigured {
-            msg = "Incorrect password or code"
-            // Only meaningful when the digits looked like a code at all.
-            if attempt.filter(\.isNumber).count == 6, !TOTP.lastRejection.isEmpty {
-                Event.send("error", ["message": "recovery code refused: \(TOTP.lastRejection)"])
-                if TOTP.lastRejection == "code already used" {
-                    msg = "That code has already been used — wait for the next one"
-                }
+        if recovering {
+            Event.send("error", ["message": "recovery code refused: \(TOTP.lastRejection)"])
+            switch TOTP.lastRejection {
+            case "code predates the recovery request":
+                msg = "That code was already showing — wait for the next one"
+            case "code already used":
+                msg = "That code has already been used — wait for the next one"
+            default:
+                msg = "That code did not work — wait for the next one and try that"
             }
         }
         windows.forEach { ($0.contentView as? LockView)?.reject(msg) }
@@ -455,6 +479,7 @@ final class Lock: NSObject {
         windows.removeAll()
         NSApp.presentationOptions = []
         authFailures = 0
+        recoveryFloor = nil
         NotificationCenter.default.removeObserver(
             self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
         Event.send("unlocked")
