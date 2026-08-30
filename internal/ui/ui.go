@@ -34,6 +34,8 @@ type State struct {
 	BlockLidSleep    bool   `json:"blockLidSleep"`
 	KeepDisplayOn    bool   `json:"keepDisplayOn"`
 	WarnOnLidClose   bool   `json:"warnOnLidClose"`
+	LidWarnSound     string `json:"lidWarnSound"`
+	LidWarnEvery     int    `json:"lidWarnEvery"`
 	ExpiresInSeconds *int   `json:"expiresInSeconds"`
 	OnAC             bool   `json:"onAC"`
 	Holding          bool   `json:"holding"`
@@ -63,6 +65,7 @@ type Event struct {
 	Enabled     *bool  `json:"enabled"`
 	IdleMinutes *int   `json:"idleMinutes"`
 	Message     string `json:"message"`
+	Sound       string `json:"sound"`
 
 	// Reported once when a password lock engages. Diagnostic only.
 	KeyWindow    bool `json:"keyWindow"`

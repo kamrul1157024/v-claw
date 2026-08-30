@@ -52,23 +52,18 @@ type view struct {
 	lockPolicy  state.Policy
 	lockIdle    int
 
-	// lidHint is shown when lid blocking is not guaranteed. Empty when it is.
+	// lidHint explains why lid blocking is not guaranteed. The menu no longer shows
+	// it — the window does, next to the setting it concerns — but the status line
+	// still needs to know.
 	lidHint string
 }
 
 type menu struct {
 	events chan event
 
-	status                *systray.MenuItem
-	off, always, auto     *systray.MenuItem
-	blockLid, keepDisplay *systray.MenuItem
-	warnLid               *systray.MenuItem
-	lidHint               *systray.MenuItem
-
-	lockNow                    *systray.MenuItem
-	lockEnabled                *systray.MenuItem
-	policyNone, policyPassword *systray.MenuItem
-	idleOff, idle5, idle15     *systray.MenuItem
+	status            *systray.MenuItem
+	off, always, auto *systray.MenuItem
+	lockNow           *systray.MenuItem
 
 	quit *systray.MenuItem
 }
@@ -88,15 +83,6 @@ func (a *app) buildMenu() {
 	m.auto = systray.AddMenuItemCheckbox("Auto (on AC)", "Only while plugged in", false)
 	systray.AddSeparator()
 
-	m.blockLid = systray.AddMenuItemCheckbox("Block lid sleep", "", false)
-	m.keepDisplay = systray.AddMenuItemCheckbox("Keep display on", "", false)
-	m.warnLid = systray.AddMenuItemCheckbox("Warn when the lid closes",
-		"Play a sound if the machine will stay awake", false)
-	m.lidHint = systray.AddMenuItem("", "")
-	m.lidHint.Disable()
-	m.lidHint.Hide()
-	systray.AddSeparator()
-
 	timed := systray.AddMenuItem("Awake for", "Release automatically")
 	t15 := timed.AddSubMenuItem("15 minutes", "")
 	t1h := timed.AddSubMenuItem("1 hour", "")
@@ -105,19 +91,9 @@ func (a *app) buildMenu() {
 	systray.AddSeparator()
 
 	m.lockNow = systray.AddMenuItem("Lock screen now", "Cover the screen, stay awake")
-	lock := systray.AddMenuItem("Virtual lock", "")
-	m.lockEnabled = lock.AddSubMenuItemCheckbox("Enabled", "", false)
-	lock.AddSeparator()
-	m.policyNone = lock.AddSubMenuItemCheckbox("Any key unlocks", "A privacy screen only", false)
-	m.policyPassword = lock.AddSubMenuItemCheckbox("v-claw password", "Set it in the window", false)
-	lock.AddSeparator()
-	m.idleOff = lock.AddSubMenuItemCheckbox("No idle lock", "", false)
-	m.idle5 = lock.AddSubMenuItemCheckbox("Lock after 5 min idle", "", false)
-	m.idle15 = lock.AddSubMenuItemCheckbox("Lock after 15 min idle", "", false)
 	systray.AddSeparator()
 
-	openWin := systray.AddMenuItem("Open v-claw…", "Full controls in a window")
-	perms := systray.AddMenuItem("Permissions…", "")
+	openWin := systray.AddMenuItem("Settings…", "Every option, in a window")
 	diagItem := systray.AddMenuItem("Diagnostics…", "")
 	systray.AddSeparator()
 
@@ -126,36 +102,26 @@ func (a *app) buildMenu() {
 	// Without the helper there are no windows to open, so say so rather than let the
 	// items look broken when clicked.
 	if !ui.Available() {
-		for _, it := range []*systray.MenuItem{openWin, perms, diagItem} {
+		for _, it := range []*systray.MenuItem{openWin, diagItem} {
 			it.Disable()
 		}
-		openWin.SetTitle("Open v-claw… (helper missing)")
+		openWin.SetTitle("Settings… (helper missing)")
 	}
 
 	a.menu = m
 
 	clicks := map[*systray.MenuItem]event{
-		m.off:            {kind: evMode, mode: state.ModeOff},
-		m.always:         {kind: evMode, mode: state.ModeAlways},
-		m.auto:           {kind: evMode, mode: state.ModeAuto},
-		m.blockLid:       {kind: evBlockLid},
-		m.keepDisplay:    {kind: evKeepDisplay},
-		m.warnLid:        {kind: evWarnLid},
-		t15:              {kind: evTimed, dur: 15 * time.Minute},
-		t1h:              {kind: evTimed, dur: time.Hour},
-		t4h:              {kind: evTimed, dur: 4 * time.Hour},
-		tUntil:           {kind: evTimed, dur: 0},
-		m.lockNow:        {kind: evLockNow},
-		m.lockEnabled:    {kind: evLockEnabled},
-		m.policyNone:     {kind: evLockPolicy, policy: state.PolicyNone},
-		m.policyPassword: {kind: evLockPolicy, policy: state.PolicyPassword},
-		m.idleOff:        {kind: evLockIdle, idleMinutes: 0},
-		m.idle5:          {kind: evLockIdle, idleMinutes: 5},
-		m.idle15:         {kind: evLockIdle, idleMinutes: 15},
-		openWin:          {kind: evOpenWindow},
-		perms:            {kind: evPermissions},
-		diagItem:         {kind: evDiagnostics},
-		m.quit:           {kind: evQuit},
+		m.off:     {kind: evMode, mode: state.ModeOff},
+		m.always:  {kind: evMode, mode: state.ModeAlways},
+		m.auto:    {kind: evMode, mode: state.ModeAuto},
+		t15:       {kind: evTimed, dur: 15 * time.Minute},
+		t1h:       {kind: evTimed, dur: time.Hour},
+		t4h:       {kind: evTimed, dur: 4 * time.Hour},
+		tUntil:    {kind: evTimed, dur: 0},
+		m.lockNow: {kind: evLockNow},
+		openWin:   {kind: evOpenWindow},
+		diagItem:  {kind: evDiagnostics},
+		m.quit:    {kind: evQuit},
 	}
 	for item, ev := range clicks {
 		go func(it *systray.MenuItem, e event) {
@@ -174,23 +140,7 @@ func (m *menu) render(v view) {
 	check(m.off, v.mode == state.ModeOff)
 	check(m.always, v.mode == state.ModeAlways)
 	check(m.auto, v.mode == state.ModeAuto)
-	check(m.blockLid, v.blockLid)
-	check(m.keepDisplay, v.keepDisplay)
-	check(m.warnLid, v.warnLid)
 
-	if v.lidHint == "" {
-		m.lidHint.Hide()
-	} else {
-		m.lidHint.SetTitle(v.lidHint)
-		m.lidHint.Show()
-	}
-
-	check(m.lockEnabled, v.lockEnabled)
-	check(m.policyNone, v.lockPolicy == state.PolicyNone)
-	check(m.policyPassword, v.lockPolicy == state.PolicyPassword)
-	check(m.idleOff, v.lockIdle == 0)
-	check(m.idle5, v.lockIdle == 5)
-	check(m.idle15, v.lockIdle == 15)
 }
 
 func check(it *systray.MenuItem, on bool) {

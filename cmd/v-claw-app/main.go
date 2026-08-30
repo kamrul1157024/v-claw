@@ -119,6 +119,10 @@ type app struct {
 	// rather than every poll while the lid stays shut.
 	lidClosed bool
 
+	// lastLidWarn drives the repeat. Cleared when the lid opens, so reopening and
+	// closing again always warns immediately.
+	lastLidWarn time.Time
+
 	// restartAuth is read once at start. Automatic login and FileVault do not change
 	// during a session, and both shell out, so re-reading every five seconds would be
 	// waste.
@@ -304,6 +308,8 @@ func (a *app) uiState() ui.State {
 		BlockLidSleep:    a.st.BlockLidSleep,
 		KeepDisplayOn:    a.st.KeepDisplayOn,
 		WarnOnLidClose:   a.st.WarnOnLidClose,
+		LidWarnSound:     a.st.LidWarnSound,
+		LidWarnEvery:     a.st.LidWarnEverySeconds,
 		ExpiresInSeconds: expires,
 		OnAC:             a.onAC,
 		Holding:          a.pow.Holding(),
@@ -335,12 +341,29 @@ func (a *app) checkLid(holding bool) {
 	justClosed := closed && !a.lidClosed
 	a.lidClosed = closed
 
-	if !justClosed || !holding || !a.st.WarnOnLidClose {
+	// Opening the lid, or no longer holding, ends the warning and resets the clock so
+	// the next close starts a fresh cycle rather than landing mid-interval.
+	if !closed || !holding || !a.st.WarnOnLidClose {
+		a.lastLidWarn = time.Time{}
 		return
 	}
 
-	log.Print("lid closed while holding the machine awake — warning")
-	go warnLidClosed()
+	now := time.Now()
+	every := time.Duration(a.st.LidWarnEverySeconds) * time.Second
+
+	switch {
+	case justClosed:
+		// The close itself always warns.
+	case every == 0:
+		// Repeating is switched off and the close has already been announced.
+		return
+	case now.Sub(a.lastLidWarn) < every:
+		return
+	}
+
+	a.lastLidWarn = now
+	log.Printf("lid shut while holding the machine awake — warning (%s)", a.st.LidWarnSound)
+	go warnLidClosed(a.st.LidWarnSound)
 }
 
 func (a *app) maybeIdleLock() {
@@ -401,6 +424,19 @@ func (a *app) handleUI(ev ui.Event) {
 		if ev.IdleMinutes != nil {
 			a.st.Lock.IdleMinutes = *ev.IdleMinutes
 		}
+	case "setSound":
+		a.st.LidWarnSound = ev.Sound
+	case "setWarnEvery":
+		a.st.LidWarnEverySeconds = ev.Seconds
+	case "previewSound":
+		// Deliberately the same function the real warning uses, so a preview cannot
+		// sound different from the thing being previewed.
+		sound := ev.Sound
+		if sound == "" {
+			sound = a.st.LidWarnSound
+		}
+		go warnLidClosed(sound)
+		return
 	case "lockNow":
 		a.engageLock()
 	case "unlocked":

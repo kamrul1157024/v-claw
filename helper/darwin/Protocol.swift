@@ -24,6 +24,8 @@ struct UIState: Decodable {
     let blockLidSleep: Bool
     let keepDisplayOn: Bool
     let warnOnLidClose: Bool
+    let lidWarnSound: String
+    let lidWarnEvery: Int
     let expiresInSeconds: Int?
     let onAC: Bool
     let holding: Bool

@@ -20,8 +20,17 @@ final class Panel: NSObject, NSWindowDelegate {
     private var modeButtons: [String: NSButton] = [:]
     private let blockLid = NSButton(checkboxWithTitle: "Block lid sleep", target: nil, action: nil)
     private let keepDisplay = NSButton(checkboxWithTitle: "Keep display on", target: nil, action: nil)
-    private let warnLid = NSButton(
-        checkboxWithTitle: "Warn with a sound when the lid closes", target: nil, action: nil)
+    // The warning sits on the "block lid sleep" row rather than being a setting of its
+    // own. It only means anything while that option is on, and two separate checkboxes
+    // invited the reading that one could be enabled without the other mattering.
+    private let speaker = NSButton()
+    private let warnWhy = NSTextField(wrappingLabelWithString: "")
+    private let warnEvery = NSPopUpButton()
+
+    private let everyChoices: [(String, Int)] = [
+        ("Once, when it closes", 0), ("Every 15 seconds", 15),
+        ("Every 30 seconds", 30), ("Every minute", 60), ("Every 5 minutes", 300),
+    ]
     private let timer = NSPopUpButton()
 
     private let lockEnabled = NSButton(checkboxWithTitle: "Enabled", target: nil, action: nil)
@@ -62,7 +71,7 @@ final class Panel: NSObject, NSWindowDelegate {
 
     private func build() {
         let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 390, height: 770),
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 820),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered, defer: false)
         w.title = "v-claw"
@@ -134,18 +143,23 @@ final class Panel: NSObject, NSWindowDelegate {
         keepDisplay.target = self
         keepDisplay.action = #selector(flagToggled(_:))
         keepDisplay.identifier = NSUserInterfaceItemIdentifier("keep_display_on")
-        warnLid.target = self
-        warnLid.action = #selector(flagToggled(_:))
-        warnLid.identifier = NSUserInterfaceItemIdentifier("warn_on_lid_close")
-        rows.append(blockLid)
-        rows.append(keepDisplay)
-        rows.append(warnLid)
+        speaker.isBordered = false
+        speaker.imagePosition = .imageOnly
+        speaker.target = self
+        speaker.action = #selector(soundMenu)
 
-        let warnWhy = NSTextField(wrappingLabelWithString:
-            "Closing the lid normally means the machine is asleep. When v-claw is "
-                + "holding it awake, a sound is the only thing left that can tell you.")
+        let lidRow = NSStackView(views: [blockLid, speaker])
+        lidRow.spacing = 6
+        rows.append(lidRow)
+        rows.append(keepDisplay)
+
+        warnEvery.removeAllItems()
+        warnEvery.addItems(withTitles: everyChoices.map(\.0))
+        warnEvery.target = self
+        warnEvery.action = #selector(everyPicked)
+        rows.append(labelled("Repeat the warning", warnEvery))
+
         warnWhy.font = .systemFont(ofSize: 10)
-        warnWhy.textColor = .tertiaryLabelColor
         warnWhy.preferredMaxLayoutWidth = 330
         rows.append(warnWhy)
 
@@ -253,7 +267,26 @@ final class Panel: NSObject, NSWindowDelegate {
         modeButtons.forEach { $0.value.state = ($0.key == s.mode) ? .on : .off }
         blockLid.state = s.blockLidSleep ? .on : .off
         keepDisplay.state = s.keepDisplayOn ? .on : .off
-        warnLid.state = s.warnOnLidClose ? .on : .off
+
+        // The icon carries the state, so no second checkbox is needed to say it.
+        let symbol = s.warnOnLidClose ? "speaker.wave.2.fill" : "speaker.slash.fill"
+        speaker.image = NSImage(systemSymbolName: symbol, accessibilityDescription:
+            s.warnOnLidClose ? "Lid warning on" : "Lid warning off")
+        speaker.contentTintColor = s.warnOnLidClose ? .secondaryLabelColor : .systemOrange
+        speaker.toolTip = s.warnOnLidClose
+            ? "Sound plays when the lid closes — click to hear it or change it"
+            : "No sound when the lid closes — click to turn it back on"
+        speaker.isEnabled = s.blockLidSleep
+
+        warnEvery.isEnabled = s.warnOnLidClose && s.blockLidSleep
+        warnEvery.selectItem(at: everyChoices.firstIndex { $0.1 == s.lidWarnEvery } ?? 1)
+
+        warnWhy.stringValue = s.warnOnLidClose
+            ? "A sound plays when you close the lid, because a closed lid normally means "
+                + "the machine is asleep and here it is not."
+            : "⚠︎ No sound when you close the lid. Nothing will tell you the machine is "
+                + "still running."
+        warnWhy.textColor = s.warnOnLidClose ? .tertiaryLabelColor : .systemOrange
 
         let secs = s.expiresInSeconds ?? 0
         timer.selectItem(at: timerChoices.firstIndex { $0.1 == secs } ?? 0)
@@ -309,6 +342,79 @@ final class Panel: NSObject, NSWindowDelegate {
     }
 
     @objc private func lockNow() { Event.send("lockNow") }
+
+    @objc private func everyPicked() {
+        Event.send("setWarnEvery", ["seconds": everyChoices[warnEvery.indexOfSelectedItem].1])
+    }
+
+    /// Everything about the lid warning behind one control: hear it, change it, or
+    /// switch it off.
+    @objc private func soundMenu() {
+        guard let s = state else { return }
+        let menu = NSMenu()
+
+        if s.warnOnLidClose {
+            let test = NSMenuItem(title: "Play it now", action: #selector(playTest), keyEquivalent: "")
+            test.target = self
+            menu.addItem(test)
+            menu.addItem(.separator())
+
+            for name in ["Funk", "Basso", "Sosumi", "Submarine", "Hero", "Glass"] {
+                let item = NSMenuItem(title: name, action: #selector(pickSound(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = name
+                item.state = name == s.lidWarnSound ? .on : .off
+                menu.addItem(item)
+            }
+            menu.addItem(.separator())
+
+            let off = NSMenuItem(title: "Turn the warning off…", action: #selector(confirmOff), keyEquivalent: "")
+            off.target = self
+            menu.addItem(off)
+        } else {
+            let on = NSMenuItem(title: "Turn the warning back on", action: #selector(turnOn), keyEquivalent: "")
+            on.target = self
+            menu.addItem(on)
+        }
+
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: speaker.bounds.height + 2), in: speaker)
+    }
+
+    @objc private func playTest() { Event.send("previewSound") }
+
+    @objc private func pickSound(_ item: NSMenuItem) {
+        guard let name = item.representedObject as? String else { return }
+        Event.send("setSound", ["sound": name])
+        // Play it straight away. Picking a warning sound without hearing it is guesswork.
+        Event.send("previewSound", ["sound": name])
+    }
+
+    @objc private func turnOn() {
+        Event.send("setFlag", ["flag": "warn_on_lid_close", "value": true])
+    }
+
+    /// Switching the warning off removes the only signal that survives a closed lid,
+    /// so it asks rather than simply obeying.
+    @objc private func confirmOff() {
+        guard let window else { return }
+        let a = NSAlert()
+        a.alertStyle = .warning
+        a.messageText = "Turn off the lid-close warning?"
+        a.informativeText = """
+        Closing the lid normally means the machine goes to sleep. With v-claw holding it \
+        awake that is not true, and this sound is the only thing that can tell you once \
+        the screen is dark.
+
+        Without it, a machine left in a bag keeps running and gets hot.
+        """
+        a.addButton(withTitle: "Keep the warning")
+        a.addButton(withTitle: "Turn it off")
+        a.beginSheetModal(for: window) { r in
+            if r == .alertSecondButtonReturn {
+                Event.send("setFlag", ["flag": "warn_on_lid_close", "value": false])
+            }
+        }
+    }
 
     /// v-claw's own password, stored as a salted PBKDF2 hash in the Keychain. It never
     /// travels over the protocol, so the Go side never handles it at all.

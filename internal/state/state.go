@@ -67,6 +67,17 @@ type State struct {
 	// one genuinely dangerous thing this app can do.
 	WarnOnLidClose bool `json:"warn_on_lid_close"`
 
+	// LidWarnSound names the alert. Validated against a closed list before it is ever
+	// turned into a path.
+	LidWarnSound string `json:"lid_warn_sound"`
+
+	// LidWarnEverySeconds repeats the warning while the lid stays shut and the machine
+	// stays awake. A single chime at the moment of closing is easily missed — the lid
+	// is already moving, the room may be noisy, and the person is usually walking away.
+	// Repeating is what makes it reach someone who has stopped paying attention.
+	// Zero warns once and then stays quiet.
+	LidWarnEverySeconds int `json:"lid_warn_every_seconds"`
+
 	// ShowWindow is a request from the CLI for the running app to open its window.
 	// The app clears it once handled. It lives here rather than in a separate channel
 	// because the state file is already the one thing both processes share, and a
@@ -77,11 +88,13 @@ type State struct {
 
 func Default() State {
 	return State{
-		Mode:           ModeAuto,
-		BlockLidSleep:  true,
-		KeepDisplayOn:  true,
-		WarnOnLidClose: true,
-		Heartbeat:      time.Now(),
+		Mode:                ModeAuto,
+		BlockLidSleep:       true,
+		KeepDisplayOn:       true,
+		WarnOnLidClose:      true,
+		LidWarnSound:        "Funk",
+		LidWarnEverySeconds: 15,
+		Heartbeat:           time.Now(),
 		Lock: Lock{
 			Enabled: true,
 			Policy:  PolicyNone,
@@ -110,6 +123,10 @@ func (s State) Validate() error {
 
 	if s.Lock.IdleMinutes < 0 || s.Lock.IdleMinutes > 24*60 {
 		return fmt.Errorf("%w: lock.idle_minutes %d", ErrInvalid, s.Lock.IdleMinutes)
+	}
+
+	if s.LidWarnEverySeconds < 0 || s.LidWarnEverySeconds > 3600 {
+		return fmt.Errorf("%w: lid_warn_every_seconds %d", ErrInvalid, s.LidWarnEverySeconds)
 	}
 	return nil
 }
@@ -158,10 +175,21 @@ func Load(path string) (State, error) {
 	// opt-out setting silently means "off" for everyone who already had v-claw. Absent
 	// and explicitly false have to be told apart.
 	var probe struct {
-		WarnOnLidClose *bool `json:"warn_on_lid_close"`
+		WarnOnLidClose      *bool   `json:"warn_on_lid_close"`
+		LidWarnSound        *string `json:"lid_warn_sound"`
+		LidWarnEverySeconds *int    `json:"lid_warn_every_seconds"`
 	}
-	if json.Unmarshal(b, &probe) == nil && probe.WarnOnLidClose == nil {
-		s.WarnOnLidClose = Default().WarnOnLidClose
+	if json.Unmarshal(b, &probe) == nil {
+		d := Default()
+		if probe.WarnOnLidClose == nil {
+			s.WarnOnLidClose = d.WarnOnLidClose
+		}
+		if probe.LidWarnSound == nil || s.LidWarnSound == "" {
+			s.LidWarnSound = d.LidWarnSound
+		}
+		if probe.LidWarnEverySeconds == nil {
+			s.LidWarnEverySeconds = d.LidWarnEverySeconds
+		}
 	}
 	if err := s.Validate(); err != nil {
 		return State{}, err
