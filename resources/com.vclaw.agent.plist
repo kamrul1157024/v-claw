@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Template. @APP@ and @LOG@ are substituted by `make install-app`, because launchd
+     needs literal paths and v-claw does not always land in /Applications. -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>Label</key>              <string>com.vclaw.agent</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Applications/v-claw.app/Contents/MacOS/v-claw-app</string>
+		<string>@APP@/Contents/MacOS/v-claw-app</string>
 		<!-- Started at login, so start quietly. A launch from Finder or Spotlight
 		     omits this and opens the window, which is what clicking an app icon
 		     is supposed to do. -->
@@ -16,7 +18,7 @@
 	<key>ProcessType</key>        <string>Interactive</string>
 	<!-- Without these the app's output goes nowhere, so a problem that only shows up
 	     at login leaves no trace at all. -->
-	<key>StandardOutPath</key>    <string>/tmp/v-claw.log</string>
-	<key>StandardErrorPath</key>  <string>/tmp/v-claw.log</string>
+	<key>StandardOutPath</key>    <string>@LOG@</string>
+	<key>StandardErrorPath</key>  <string>@LOG@</string>
 </dict>
 </plist>

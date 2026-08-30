@@ -28,6 +28,39 @@ func TestNewBoolDefaultsOnForOlderFiles(t *testing.T) {
 		}
 	})
 
+	t.Run("the dock default also applies to older files", func(t *testing.T) {
+		p := filepath.Join(dir, "nodock.json")
+		body := `{"mode":"auto","block_lid_sleep":true,"keep_display_on":true,
+		          "lock":{"enabled":true,"policy":"none","idle_minutes":0}}`
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		s, err := Load(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !s.ShowInDock {
+			t.Fatal("an existing install must get the Dock icon, not stay invisible")
+		}
+	})
+
+	t.Run("turning the dock off survives a reload", func(t *testing.T) {
+		p := filepath.Join(dir, "dockoff.json")
+		body := `{"mode":"auto","block_lid_sleep":true,"keep_display_on":true,
+		          "show_in_dock":false,
+		          "lock":{"enabled":true,"policy":"none","idle_minutes":0}}`
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		s, err := Load(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.ShowInDock {
+			t.Fatal("an explicit false must be respected")
+		}
+	})
+
 	t.Run("an explicit false is respected", func(t *testing.T) {
 		p := filepath.Join(dir, "off.json")
 		body := `{"mode":"auto","block_lid_sleep":true,"keep_display_on":true,

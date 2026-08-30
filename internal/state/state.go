@@ -78,10 +78,11 @@ type State struct {
 	// Zero warns once and then stays quiet.
 	LidWarnEverySeconds int `json:"lid_warn_every_seconds"`
 
-	// ShowInDock puts v-claw in the Dock as well as the menu bar. The menu bar can
-	// silently run out of room — on a Mac with a notch, macOS hides overflow behind it
-	// with no warning — and then the app has no visible presence at all. The Dock
-	// never overflows.
+	// ShowInDock puts v-claw in the Dock as well as the menu bar. On by default: the
+	// menu bar silently runs out of room — on a Mac with a notch, macOS hides overflow
+	// behind it with no warning — and an app with no visible presence may as well not
+	// be running. The Dock never overflows. Anyone who wants it out of the way can
+	// switch it off, which is a better default than being invisible.
 	ShowInDock bool `json:"show_in_dock"`
 
 	// ShowWindow is a request from the CLI for the running app to open its window.
@@ -100,6 +101,7 @@ func Default() State {
 		WarnOnLidClose:      true,
 		LidWarnSound:        "Funk",
 		LidWarnEverySeconds: 15,
+		ShowInDock:          true,
 		Heartbeat:           time.Now(),
 		Lock: Lock{
 			Enabled: true,
@@ -184,6 +186,7 @@ func Load(path string) (State, error) {
 		WarnOnLidClose      *bool   `json:"warn_on_lid_close"`
 		LidWarnSound        *string `json:"lid_warn_sound"`
 		LidWarnEverySeconds *int    `json:"lid_warn_every_seconds"`
+		ShowInDock          *bool   `json:"show_in_dock"`
 	}
 	if json.Unmarshal(b, &probe) == nil {
 		d := Default()
@@ -195,6 +198,9 @@ func Load(path string) (State, error) {
 		}
 		if probe.LidWarnEverySeconds == nil {
 			s.LidWarnEverySeconds = d.LidWarnEverySeconds
+		}
+		if probe.ShowInDock == nil {
+			s.ShowInDock = d.ShowInDock
 		}
 	}
 	if err := s.Validate(); err != nil {

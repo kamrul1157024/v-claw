@@ -13,10 +13,20 @@ LABEL    := com.vclaw.agent
 GO       ?= go
 SWIFTC   ?= swiftc
 
-.PHONY: all build app icons test lint clean \
+.PHONY: all check build app icons test lint clean \
         install install-app uninstall install-daemon uninstall-daemon diagnose explain
 
-all: build app
+all: check build app
+
+check:
+	@[ "$$(uname)" = Darwin ] || { \
+		echo "v-claw supports macOS only today. See docs/spec/08-cross-platform.md"; exit 1; }
+	@command -v $(GO) >/dev/null || { \
+		echo "Go is not installed. Get it from https://go.dev/dl/"; exit 1; }
+	@command -v $(SWIFTC) >/dev/null || { \
+		echo "Swift is missing. Run: xcode-select --install"; exit 1; }
+	@xcode-select -p >/dev/null 2>&1 || { \
+		echo "Command Line Tools are missing. Run: xcode-select --install"; exit 1; }
 
 build:
 	@mkdir -p $(BUILD)
@@ -71,6 +81,9 @@ install-app: app
 	@# Stop the running copy before replacing its binary, or the copy lands under a
 	@# live process and the reload fails.
 	-@launchctl bootout gui/$(UID)/$(LABEL) 2>/dev/null
+	-@pkill -f "v-claw.app/Contents/MacOS/v-claw-app" 2>/dev/null
+	-@pkill -f "v-claw.app/Contents/MacOS/v-claw-ui" 2>/dev/null
+	@sleep 1
 	@# Prefer /Applications, but never require admin for it. If it is not writable
 	@# (a managed Mac, or a stale root-owned copy left by an old sudo install), fall
 	@# back to the per-user ~/Applications so install still needs no sudo. The agent
@@ -83,7 +96,9 @@ install-app: app
 		cp -R $(APP) "$$appdir/"; \
 		echo "note: /Applications needs admin; installed to $$appdir instead"; \
 	fi; \
-	sed "s#/Applications/v-claw.app#$$appdir/v-claw.app#" \
+	mkdir -p $(HOME)/Library/Logs; \
+	sed -e "s|@APP@|$$appdir/v-claw.app|g" \
+		-e "s|@LOG@|$(HOME)/Library/Logs/v-claw.log|g" \
 		resources/com.vclaw.agent.plist > $(AGENT)
 	cp $(BUILD)/v-claw $(BINDIR)/v-claw
 	@# bootstrap fails if the label is somehow still registered, so fall back to
@@ -92,7 +107,10 @@ install-app: app
 		|| launchctl kickstart -k gui/$(UID)/$(LABEL)
 	@echo
 	@echo "v-claw is in your menu bar."
-	@echo "  cli: $(BINDIR)/v-claw   (add to PATH if it is not already)"
+	@echo "  cli: $(BINDIR)/v-claw"
+	@case ":$$PATH:" in *":$(BINDIR):"*) ;; *) \
+		echo; echo "  $(BINDIR) is not on your PATH. Add to your shell profile:"; \
+		echo "    export PATH=\"$(BINDIR):\$$PATH\"" ;; esac
 
 uninstall:
 	-@launchctl bootout gui/$(UID)/$(LABEL) 2>/dev/null
