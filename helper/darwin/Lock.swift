@@ -75,7 +75,10 @@ final class LockView: NSView {
         useRecovery.isHidden = !(wantsPassword && TOTP.isConfigured)
 
         style(countdown, size: 12, weight: .regular, alpha: 0.55)
-        countdown.isHidden = true
+        // Running before the button is pressed, not after. Knowing a fresh code is
+        // four seconds away changes what you do; finding that out only once you have
+        // committed to the recovery flow does not.
+        countdown.isHidden = !(wantsPassword && TOTP.isConfigured)
 
         // Always on screen for a password lock, never only after N failures. Someone
         // who cannot type at all never reaches a failure count, and they are exactly
@@ -113,11 +116,19 @@ final class LockView: NSView {
         let d = DateFormatter(); d.dateFormat = "EEEE d MMMM"
         clock.stringValue = t.string(from: now)
         date.stringValue = d.string(from: now)
-        if recoveryMode { updateCountdown(now) }
+        if !countdown.isHidden { updateCountdown(now) }
         layoutStack()
     }
 
     private func updateCountdown(_ now: Date) {
+        // Before the user opts in, the line is informational only.
+        guard recoveryMode else {
+            let left = 30 - Int(now.timeIntervalSince1970) % 30
+            countdown.stringValue = "Authenticator code refreshes in \(left)s"
+            countdown.textColor = NSColor.white.withAlphaComponent(0.35)
+            return
+        }
+
         if let arm = armAt, now < arm {
             let left = max(1, Int(arm.timeIntervalSince(now).rounded(.up)))
             countdown.stringValue = "New code in \(left)s"
@@ -149,17 +160,23 @@ final class LockView: NSView {
     /// that was already half spent when they looked at it.
     @objc private func enterRecovery() {
         recoveryMode = true
-        focusedAfterArming = false
         useRecovery.isHidden = true
-        countdown.isHidden = false
         error.isHidden = true
-
         field.stringValue = ""
-        field.isEnabled = false
-        field.placeholderString = "Waiting for a new code"
 
+        // Always wait for the next boundary, never the code currently on screen. That
+        // one is half spent on average and there is no way to tell how much life it has
+        // left from the phone alone. Waiting costs at most thirty seconds and removes
+        // the entire class of failure where a code is refused for being stale — which
+        // is the failure that made this feature look broken in the first place.
+        //
+        // The countdown has been running since the lock appeared, so the wait is
+        // visible before the button is pressed rather than a surprise after it.
         let now = Date().timeIntervalSince1970
         armAt = Date(timeIntervalSince1970: (floor(now / 30) + 1) * 30)
+        focusedAfterArming = false
+        field.isEnabled = false
+        field.placeholderString = "Waiting for a new code"
         tick()
     }
 
@@ -184,6 +201,9 @@ final class LockView: NSView {
             armAt = Date(timeIntervalSince1970: (floor(now / 30) + 1) * 30)
             field.isEnabled = false
             field.placeholderString = "Waiting for a new code"
+            // Say what to do rather than only what failed. The countdown beside this
+            // is already showing exactly how long that is.
+            error.stringValue = "That code did not work — wait for the next one and try that"
         }
 
         window?.makeFirstResponder(field)
@@ -196,6 +216,8 @@ final class LockView: NSView {
     }
 
     var typed: String { field.stringValue }
+
+    var isRecovering: Bool { recoveryMode }
 
     func restore(_ text: String) {
         field.stringValue = text
