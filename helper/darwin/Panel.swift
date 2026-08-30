@@ -377,46 +377,85 @@ final class Panel: NSObject, NSWindowDelegate {
             return
         }
 
-        guard let secret = TOTP.enrol() else {
+        guard let secret = TOTP.generate() else {
             return warn("Could not create a recovery secret.")
         }
+        showEnrolment(secret: secret, error: nil)
+    }
 
-        let account = NSFullUserName()
-        let uri = TOTP.uri(secret: secret, account: account)
+    /// Shows the QR and demands a working code before anything is written to disk.
+    ///
+    /// On a wrong code this reopens with the *same* secret, so the user never has to
+    /// rescan. Nothing is stored until a code verifies, which means a scan that
+    /// silently failed is caught here rather than at a lock screen.
+    private func showEnrolment(secret: String, error: String?) {
+        guard let window else { return }
 
-        let box = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 260))
+        let uri = TOTP.uri(secret: secret, account: NSFullUserName())
+
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 320))
         if let cg = TOTP.qr(for: uri) {
-            let iv = NSImageView(frame: NSRect(x: 50, y: 60, width: 200, height: 200))
+            let iv = NSImageView(frame: NSRect(x: 50, y: 118, width: 200, height: 200))
             iv.image = NSImage(cgImage: cg, size: NSSize(width: 200, height: 200))
             box.addSubview(iv)
         }
-        // Shown as well as the QR, because a phone cannot scan the screen it is
-        // unlocking, and some people type it into a password manager instead.
+
+        // Shown as well as the QR: a phone cannot scan the screen it is unlocking, and
+        // some people prefer to paste it into a password manager.
         let code = NSTextField(labelWithString: secret)
-        code.frame = NSRect(x: 0, y: 26, width: 300, height: 20)
+        code.frame = NSRect(x: 0, y: 92, width: 300, height: 18)
         code.alignment = .center
         code.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         code.isSelectable = true
         box.addSubview(code)
 
-        let hint = NSTextField(labelWithString: "Scan with any authenticator app")
-        hint.frame = NSRect(x: 0, y: 4, width: 300, height: 18)
-        hint.alignment = .center
-        hint.font = .systemFont(ofSize: 11)
-        hint.textColor = .secondaryLabelColor
-        box.addSubview(hint)
+        let prompt = NSTextField(labelWithString: "Enter the current code to confirm")
+        prompt.frame = NSRect(x: 0, y: 66, width: 300, height: 18)
+        prompt.alignment = .center
+        prompt.font = .systemFont(ofSize: 11)
+        prompt.textColor = .secondaryLabelColor
+        box.addSubview(prompt)
+
+        let entry = NSTextField(frame: NSRect(x: 90, y: 34, width: 120, height: 26))
+        entry.alignment = .center
+        entry.font = .monospacedDigitSystemFont(ofSize: 16, weight: .regular)
+        entry.placeholderString = "000000"
+        box.addSubview(entry)
+
+        if let error {
+            let e = NSTextField(labelWithString: error)
+            e.frame = NSRect(x: 0, y: 10, width: 300, height: 18)
+            e.alignment = .center
+            e.font = .systemFont(ofSize: 11)
+            e.textColor = .systemRed
+            box.addSubview(e)
+        }
 
         let alert = NSAlert()
         alert.messageText = "Recovery code"
-        alert.informativeText = "Enter a code from your authenticator at the lock screen "
-            + "to get back in without restarting. Nothing leaves this Mac."
+        alert.informativeText = "Scan with any authenticator app, then type the code it "
+            + "shows. Nothing is saved until a code works, so a failed scan cannot leave "
+            + "you locked out later. Nothing leaves this Mac."
         alert.accessoryView = box
-        alert.addButton(withTitle: "Done")
+        alert.addButton(withTitle: "Confirm")
         alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = entry
+
         alert.beginSheetModal(for: window) { r in
-            if r == .alertSecondButtonReturn {
-                TOTP.forget()
+            guard r == .alertFirstButtonReturn else { return }
+
+            let typed = entry.stringValue
+            guard TOTP.matches(typed, secret: secret) else {
+                let why = typed.filter(\.isNumber).count == 6
+                    ? "That code did not match. Check your phone's clock and try the next one."
+                    : "Enter the six digits your authenticator shows."
+                // Reopen with the same secret so the QR does not have to be rescanned.
+                DispatchQueue.main.async { self.showEnrolment(secret: secret, error: why) }
                 return
+            }
+
+            guard TOTP.commit(secret) else {
+                return self.warn("Could not save the recovery secret.")
             }
             self.setRecovery.title = "Recovery code ✓"
         }

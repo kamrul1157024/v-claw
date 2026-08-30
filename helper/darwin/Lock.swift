@@ -313,7 +313,17 @@ final class Lock: NSObject {
         // valve and it was simply a bypass: anyone could fail three times on purpose
         // and walk in. Tell the user how to get out instead of opening the door.
         // The way out is on screen permanently, so this only has to report the failure.
-        let msg = TOTP.isConfigured ? "Incorrect password or code" : "Incorrect password"
+        var msg = "Incorrect password"
+        if TOTP.isConfigured {
+            msg = "Incorrect password or code"
+            // Only meaningful when the digits looked like a code at all.
+            if attempt.filter(\.isNumber).count == 6, !TOTP.lastRejection.isEmpty {
+                Event.send("error", ["message": "recovery code refused: \(TOTP.lastRejection)"])
+                if TOTP.lastRejection == "code already used" {
+                    msg = "That code has already been used — wait for the next one"
+                }
+            }
+        }
         windows.forEach { ($0.contentView as? LockView)?.reject(msg) }
 
         // A wrong password must cost something, or the lock is brute-forced by holding

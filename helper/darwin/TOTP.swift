@@ -20,28 +20,67 @@ import Foundation
 enum TOTP {
     private static let digits = 6
     private static let period: Int64 = 30
-    /// Codes from one step either side are accepted, so a phone with a slightly wrong
-    /// clock still works. Wider than this starts to matter, because each extra step is
-    /// another code an attacker gets to guess.
-    private static let skewSteps: Int64 = 1
+    /// The acceptance window, and it is deliberately lopsided.
+    ///
+    /// Steps roll over on fixed 30-second boundaries, so the code on your phone is
+    /// already about 15 seconds old when you look at it, often 25. Add finding the
+    /// phone, reading six digits and typing them, and the step has usually rolled twice
+    /// by the time you press Enter. A symmetric one-step window rejects that, which is
+    /// why the first code entered after locking failed and the next one worked.
+    ///
+    /// Reaching further back is cheap: an old code is one an attacker had to have seen
+    /// already, and each step is burned on use so it works exactly once. Reaching
+    /// forward is not, since those codes have not been shown yet and are pure guessing
+    /// surface, so the forward window stays at one step for clock drift alone.
+    private static let stepsBack: Int64 = 2
+    private static let stepsForward: Int64 = 1
 
     private static var seedFile: URL { Storage.dir.appendingPathComponent("totp.seed") }
     private static var usedFile: URL { Storage.dir.appendingPathComponent("totp.used") }
 
     static var isConfigured: Bool { secret() != nil }
 
+    /// Why the last code was refused. Never contains the code itself. Logged so a
+    /// recurrence leaves evidence rather than a guess.
+    private(set) static var lastRejection = ""
+
     // MARK: setup
 
-    /// Generates a new 20-byte seed and returns it base32-encoded for the phone.
-    static func enrol() -> String? {
+    /// Generates a seed and returns it base32-encoded. Deliberately does NOT persist.
+    ///
+    /// Nothing reaches disk until the user proves their authenticator holds it, for two
+    /// reasons. A scan that silently failed, or went into the wrong app, would otherwise
+    /// only be discovered while locked out — the worst possible moment to find out. And
+    /// an abandoned setup would leave a live seed behind that nobody ever scanned, after
+    /// it had already been displayed on screen.
+    static func generate() -> String? {
         var raw = [UInt8](repeating: 0, count: 20)
         guard SecRandomCopyBytes(kSecRandomDefault, raw.count, &raw) == errSecSuccess else {
             return nil
         }
-        let b32 = base32(Data(raw))
-        guard Storage.write(Data(b32.utf8), to: seedFile) else { return nil }
+        return base32(Data(raw))
+    }
+
+    /// Checks a code against a seed that is not stored yet. Used to confirm enrolment.
+    static func matches(_ entered: String, secret: String) -> Bool {
+        let cleaned = entered.filter(\.isNumber)
+        guard cleaned.count == digits, let key = unbase32(secret) else { return false }
+
+        let step = Int64(Date().timeIntervalSince1970) / period
+        for offset in -stepsBack ... stepsForward
+            where constantTimeEqual(code(key: key, step: step + offset), cleaned)
+        {
+            return true
+        }
+        return false
+    }
+
+    /// Persists a seed the user has just proved they hold.
+    @discardableResult
+    static func commit(_ secret: String) -> Bool {
+        guard Storage.write(Data(secret.utf8), to: seedFile) else { return false }
         try? FileManager.default.removeItem(at: usedFile)
-        return b32
+        return true
     }
 
     static func forget() {
@@ -78,14 +117,24 @@ enum TOTP {
         guard cleaned.count == digits, let key = secret() else { return false }
 
         let step = Int64(Date().timeIntervalSince1970) / period
-        for offset in -skewSteps ... skewSteps {
+        var sawUsed = false
+
+        for offset in -stepsBack ... stepsForward {
             let candidate = step + offset
-            guard !isUsed(candidate) else { continue }
-            if constantTimeEqual(code(key: key, step: candidate), cleaned) {
-                markUsed(candidate)
-                return true
+            let matches = constantTimeEqual(code(key: key, step: candidate), cleaned)
+            guard matches else { continue }
+
+            if isUsed(candidate) {
+                // The digits were right but this code has already been spent. Worth
+                // distinguishing in the log from a code that simply did not match.
+                sawUsed = true
+                continue
             }
+            markUsed(candidate)
+            return true
         }
+
+        lastRejection = sawUsed ? "code already used" : "no matching code in the window"
         return false
     }
 
