@@ -14,13 +14,9 @@
 //
 // Protocol: one JSON object per line, both directions. See Protocol.swift.
 import AppKit
-import UserNotifications
 
-final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+final class Delegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_: Notification) {
-        if Permissions.notificationsAvailable {
-            UNUserNotificationCenter.current().delegate = self
-        }
         // Permissions used to be applied only at write time, so a secret written by an
         // older build keeps its looser mode until something happens to rewrite it.
         Storage.tightenAll()
@@ -36,16 +32,6 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows visible: Bool) -> Bool {
         if !visible { Event.send("openWindow") }
         return true
-    }
-
-    // Show notifications even when v-claw is frontmost; the release warning matters
-    // more than the convention of suppressing them.
-    func userNotificationCenter(
-        _: UNUserNotificationCenter,
-        willPresent _: UNNotification,
-        withCompletionHandler done: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        done([.banner, .sound])
     }
 
     /// Reads stdin on a background thread and dispatches to the main thread. AppKit
@@ -126,23 +112,18 @@ func setDockVisible(_ on: Bool) {
     if on { NSApp.activate(ignoringOtherApps: true) }
 }
 
+/// Shows a warning.
+///
+/// A banner, not a notification. macOS will not grant notifications to a bundle
+/// compiled from source and ad-hoc signed, refuses silently, and leaves the
+/// authorisation status looking as though it was never asked — so there is nothing to
+/// grant, nothing to diagnose, and no way to tell the difference from a bug.
+///
+/// These warnings fire when nobody is watching the app, which is exactly when a
+/// silently dropped one does the damage. Drawing them directly needs no permission and
+/// behaves the same everywhere.
 func postNotification(title: String, body: String) {
-    // Always draw the banner. macOS refuses notifications to an ad-hoc signed bundle,
-    // and the refusal is silent — the whole point of these messages is that nobody is
-    // watching the app when they fire, so a delivery path that can quietly fail is no
-    // path at all.
     Banner.shared.show(title: title, body: body)
-
-    guard Permissions.notificationsAvailable else { return }
-    let content = UNMutableNotificationContent()
-    content.title = title
-    content.body = body
-
-    let req = UNNotificationRequest(
-        identifier: UUID().uuidString, content: content, trigger: nil)
-    UNUserNotificationCenter.current().add(req) { err in
-        if let err { Event.send("error", ["message": "notify: \(err.localizedDescription)"]) }
-    }
 }
 
 func showDiagnostics(_ text: String) {
@@ -173,5 +154,4 @@ let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let delegate = Delegate()
 app.delegate = delegate
-Permissions.requestQuietly()
 app.run()

@@ -4,92 +4,27 @@
 // On a managed Mac running EDR, an app that states which permissions it will never
 // request is easier to trust and easier to get approved.
 //
-// Needed:      Notifications, so a release can be announced.
+// Needed:      nothing.
 // Optional:    Accessibility, and only for the global lock hotkey.
-// Never asked: Screen Recording, Input Monitoring, Full Disk Access, Camera, Mic.
+// Never asked: Notifications, Screen Recording, Input Monitoring, Full Disk Access,
+//              Camera, Microphone.
+//
+// Notifications were tried and removed. macOS will not grant them to a bundle compiled
+// from source and ad-hoc signed; it refuses silently and leaves the status reading
+// notDetermined, so the app could neither deliver a warning nor explain why. Warnings
+// are drawn on screen instead — see Banner.swift — which needs no permission and cannot
+// be switched off by accident.
 //
 // Idle detection deliberately uses CGEventSourceSecondsSinceLastEventType, which needs
 // no permission, rather than an event tap, which needs Accessibility and looks like a
 // keylogger to a reviewer.
 import AppKit
-import UserNotifications
 
 final class Permissions: NSObject {
     static let shared = Permissions()
 
     private var window: NSWindow?
-    private var notifyRow: Row?
     private var axRow: Row?
-
-    /// UNUserNotificationCenter throws, not returns nil, when the process has no app
-    /// bundle. That happens whenever the helper runs straight out of build/ during
-    /// development, so every entry point has to check first.
-    static var notificationsAvailable: Bool { Bundle.main.bundleIdentifier != nil }
-
-    /// Requests notification authorisation without showing any UI. Called once at
-    /// launch: the system prompt is the only thing the user sees, and only the first
-    /// time.
-    static func requestQuietly() {
-        guard notificationsAvailable else { return }
-        UNUserNotificationCenter.current()
-            .requestAuthorization(options: [.alert, .sound]) { _, _ in }
-    }
-
-    /// Asks for notification permission, or sends the user to System Settings.
-    ///
-    /// requestAuthorization only ever prompts once. After the first answer it returns
-    /// the stored decision immediately and shows nothing, so a button wired straight to
-    /// it does nothing at all for anyone who has already said no — which is exactly
-    /// when they are clicking it. Once denied, the only route is Settings.
-    static func grantNotifications(_ done: @escaping () -> Void) {
-        guard notificationsAvailable else { return done() }
-
-        UNUserNotificationCenter.current().getNotificationSettings { s in
-            switch s.authorizationStatus {
-            case .notDetermined:
-                UNUserNotificationCenter.current()
-                    .requestAuthorization(options: [.alert, .sound]) { ok, err in
-                        DispatchQueue.main.async {
-                            // macOS refuses outright for a bundle it does not trust,
-                            // and shows the user nothing at all. Say so, rather than
-                            // leaving a button that appears to be broken.
-                            if !ok, err != nil {
-                                Banner.shared.show(
-                                    title: "macOS will not allow notifications",
-                                    body: "v-claw is built from source and not notarized, "
-                                        + "so the system refuses them. Warnings will "
-                                        + "appear on screen like this instead.",
-                                    seconds: 9)
-                            }
-                            done()
-                        }
-                    }
-            default:
-                DispatchQueue.main.async {
-                    openNotificationSettings()
-                    done()
-                }
-            }
-        }
-    }
-
-    /// Opens the Notifications pane, scrolled to this app where macOS allows it.
-    static func openNotificationSettings() {
-        let candidates = [
-            "x-apple.systempreferences:com.apple.Notifications-Settings.extension",
-            "x-apple.systempreferences:com.apple.preference.notifications",
-        ]
-        for raw in candidates {
-            if let url = URL(string: raw), NSWorkspace.shared.open(url) { return }
-        }
-    }
-
-    static func notificationsGranted(_ done: @escaping (Bool) -> Void) {
-        guard notificationsAvailable else { return done(false) }
-        UNUserNotificationCenter.current().getNotificationSettings { s in
-            DispatchQueue.main.async { done(s.authorizationStatus == .authorized) }
-        }
-    }
 
     static var accessibilityGranted: Bool { AXIsProcessTrusted() }
 
@@ -117,16 +52,6 @@ final class Permissions: NSObject {
         sub.textColor = .secondaryLabelColor
         sub.preferredMaxLayoutWidth = 380
 
-        notifyRow = Row(
-            title: "Notifications",
-            detail: "Tell you when v-claw releases on its own. If macOS refuses them — "
-                + "likely, since v-claw is built from source and not notarized — the "
-                + "same warnings appear on screen instead, so nothing is lost.",
-            action: "Grant Permission",
-            onGrant: { done in
-                Permissions.grantNotifications(done)
-            })
-
         axRow = Row(
             title: "Accessibility  (optional)",
             detail: hotkeyEnabled
@@ -144,6 +69,7 @@ final class Permissions: NSObject {
 
         let never = NSTextField(wrappingLabelWithString: """
         v-claw will never ask for:
+           •  Notifications           warnings are drawn on screen instead
            •  Screen Recording        it does not read your screen
            •  Input Monitoring        idle time is read without an event tap
            •  Full Disk Access, Camera, Microphone, Contacts, Location
@@ -157,7 +83,7 @@ final class Permissions: NSObject {
         close.keyEquivalent = "\r"
 
         let root = NSStackView(views: [
-            title, sub, notifyRow!.view, axRow!.view, never, close,
+            title, sub, axRow!.view, never, close,
         ])
         root.orientation = .vertical
         root.alignment = .leading
@@ -177,16 +103,9 @@ final class Permissions: NSObject {
     }
 
     func refresh() {
-        Permissions.notificationsGranted { [weak self] ok in
-            self?.notifyRow?.setGranted(ok)
-        }
-        guard Permissions.notificationsAvailable else { return }
-        UNUserNotificationCenter.current().getNotificationSettings { [weak self] s in
-            let determined = s.authorizationStatus != .notDetermined
-            DispatchQueue.main.async {
-                self?.notifyRow?.setActionTitle(determined ? "Open Settings" : "Grant Permission")
-            }
-        }
+        // Once the system has refused, stop offering to ask. A button that cannot
+        // succeed is worse than no button: it reads as a broken app rather than a
+        // platform restriction, and it invites the user to keep trying.
         axRow?.setGranted(Permissions.accessibilityGranted)
     }
 
@@ -243,5 +162,14 @@ final class Permissions: NSObject {
         /// "Grant Permission" is a lie once macOS has stopped asking. Say where the
         /// click actually goes.
         func setActionTitle(_ t: String) { button.title = t }
+
+        /// Nothing to grant and nowhere to go. Explain instead of offering.
+        func setUnavailable(_ why: String) {
+            status.stringValue = why
+            status.textColor = .secondaryLabelColor
+            status.lineBreakMode = .byWordWrapping
+            status.preferredMaxLayoutWidth = 370
+            button.isHidden = true
+        }
     }
 }

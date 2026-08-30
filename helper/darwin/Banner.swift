@@ -1,17 +1,18 @@
-// An on-screen banner, used when a notification cannot be delivered.
+// How v-claw shows a warning.
 //
-// v-claw's warnings exist for the moments nobody is watching: a timer expired, the
-// machine is still awake on battery, the lid shut while it kept running. Every one of
-// those goes out as a notification, and on this app they often cannot.
+// These fire for the moments nobody is watching: a timer expired, the machine is still
+// awake on battery, the lid shut while it kept running.
 //
-// macOS refuses UNUserNotificationCenter for a bundle it does not trust, and v-claw is
-// built from source and ad-hoc signed by design — there is no Developer ID to fix it
-// with. The request returns "not allowed", nothing appears, and the app looks like it
-// is working. A warning that silently fails is worse than no warning, because it is
-// relied upon.
+// System notifications were used first and have been removed. macOS will not grant
+// them to a bundle compiled from source and ad-hoc signed, and v-claw is both by
+// design — there is no Developer ID to change that with. It refuses silently and
+// leaves the authorisation status reading as though it was never asked, so the app
+// could neither deliver a warning nor explain the absence, and the permissions window
+// offered a button that could never succeed.
 //
-// So this draws the message directly. It needs no permission, cannot be switched off
-// by a setting nobody remembers changing, and looks the same on every machine.
+// Drawing the message directly needs no permission, cannot be denied or switched off
+// by accident, and behaves the same on every machine. A warning that fails silently is
+// worse than none, because it gets relied upon.
 import AppKit
 
 final class Banner {

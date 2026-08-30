@@ -17,7 +17,6 @@ final class Panel: NSObject, NSWindowDelegate {
     private let tierLabel = NSTextField(labelWithString: "")
     private let hintLabel = NSTextField(wrappingLabelWithString: "")
     private let batteryWarn = NSTextField(wrappingLabelWithString: "")
-    private let permsWarn = NSButton()
 
     private var modeButtons: [String: NSButton] = [:]
     private let blockLid = NSButton(checkboxWithTitle: "Block lid sleep", target: nil, action: nil)
@@ -98,7 +97,6 @@ final class Panel: NSObject, NSWindowDelegate {
         root.addArrangedSubview(divider())
         root.addArrangedSubview(dockBlock())
         root.addArrangedSubview(divider())
-        root.addArrangedSubview(permsBlock())
         root.addArrangedSubview(footer())
 
         let content = NSView()
@@ -279,24 +277,6 @@ final class Panel: NSObject, NSWindowDelegate {
         return column([heading("Where to find v-claw"), showInDock, why], spacing: 6)
     }
 
-    /// Notes when notifications are off.
-    ///
-    /// Not an alarm any more: the warnings fall back to an on-screen banner, so nothing
-    /// is lost. It is still worth saying, because the absence of Notification Centre
-    /// entries is otherwise unexplained, and because the cause — an unnotarized build
-    /// that macOS will not grant them to — is not something the user can guess.
-    private func permsBlock() -> NSView {
-        permsWarn.title = ""
-        permsWarn.isBordered = false
-        permsWarn.alignment = .left
-        permsWarn.contentTintColor = .systemOrange
-        permsWarn.font = .systemFont(ofSize: 11, weight: .medium)
-        permsWarn.target = self
-        permsWarn.action = #selector(openPermissions)
-        permsWarn.isHidden = true
-        return permsWarn
-    }
-
     private func footer() -> NSView {
         let perms = NSButton(title: "Permissions…", target: self, action: #selector(openPermissions))
         let diag = NSButton(title: "Diagnostics…", target: self, action: #selector(openDiagnostics))
@@ -335,12 +315,7 @@ final class Panel: NSObject, NSWindowDelegate {
         keepDisplay.state = s.keepDisplayOn ? .on : .off
         showInDock.state = s.showInDock ? .on : .off
 
-        Permissions.notificationsGranted { [weak self] ok in
-            guard let self else { return }
-            self.permsWarn.isHidden = ok
-            self.permsWarn.title = "\u{26A0}\u{FE0E} Notifications are off, so warnings "
-                + "appear on screen instead. Click for why."
-        }
+
 
         // The icon carries the state, so no second checkbox is needed to say it.
         let symbol = s.warnOnLidClose ? "speaker.wave.2.fill" : "speaker.slash.fill"
