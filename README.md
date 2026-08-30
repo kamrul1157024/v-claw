@@ -15,6 +15,17 @@
   <img alt="status" src="https://img.shields.io/badge/status-alpha-orange">
 </p>
 
+<p align="center">
+  <img src="docs/images/menu.png" alt="v-claw menu bar" width="330" valign="top">
+  &nbsp;&nbsp;
+  <img src="docs/images/settings.png" alt="v-claw settings window" width="235" valign="top">
+</p>
+
+<p align="center">
+  <sub>The menu bar, and the settings window. The claw in the menu bar turns green when
+  it is holding the machine awake.</sub>
+</p>
+
 ---
 
 ## Why it is called v-claw
