@@ -1,0 +1,24 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.24' }
+      - run: make build
+      - run: make test
+      - run: make lint
+
+  # Nothing above internal/power may import "C". These builds enforce it, and keep the
+  # Linux and Windows ports from being painted into a corner.
+  cross:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.24' }
+      - run: GOOS=linux   go build ./internal/paths ./internal/power ./internal/state
+      - run: GOOS=windows go build ./internal/paths ./internal/power ./internal/state
