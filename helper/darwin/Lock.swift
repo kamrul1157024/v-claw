@@ -303,7 +303,17 @@ final class Lock: NSObject {
         // and a restart destroys the long-running work this machine is being kept
         // awake for in the first place.
         if TOTP.isConfigured, TOTP.verify(attempt) {
-            Event.send("error", ["message": "unlocked with a recovery code"])
+            let skew = TOTP.lastSkewSeconds
+            if skew != 0 {
+                // Worth saying out loud: a drifting phone clock breaks every other
+                // authenticator code the user has, not just this one.
+                Event.send("error", ["message":
+                    "recovery code accepted, but your phone's clock is about \(abs(skew))s "
+                        + (skew > 0 ? "fast" : "slow")
+                        + " — other authenticator codes will be failing too"])
+            } else {
+                Event.send("error", ["message": "unlocked with a recovery code"])
+            }
             return finish()
         }
 

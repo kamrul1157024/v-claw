@@ -20,20 +20,26 @@ import Foundation
 enum TOTP {
     private static let digits = 6
     private static let period: Int64 = 30
-    /// The acceptance window, and it is deliberately lopsided.
+    /// The acceptance window, two steps either side, so ±60 seconds plus the current
+    /// step.
     ///
-    /// Steps roll over on fixed 30-second boundaries, so the code on your phone is
-    /// already about 15 seconds old when you look at it, often 25. Add finding the
-    /// phone, reading six digits and typing them, and the step has usually rolled twice
-    /// by the time you press Enter. A symmetric one-step window rejects that, which is
-    /// why the first code entered after locking failed and the next one worked.
+    /// Phone clocks drift, and they drift forwards as often as backwards. A phone
+    /// running 30 seconds fast shows the code for the *next* step, which a tight
+    /// forward window rejects outright; the user then waits, the Mac advances a step,
+    /// and the following code works. That is the failure this width exists to absorb,
+    /// and it was measured on a real device rather than guessed at.
     ///
-    /// Reaching further back is cheap: an old code is one an attacker had to have seen
-    /// already, and each step is burned on use so it works exactly once. Reaching
-    /// forward is not, since those codes have not been shown yet and are pure guessing
-    /// surface, so the forward window stays at one step for clock drift alone.
+    /// The cost is five live codes instead of three. With each step burned on use and
+    /// a growing delay after every wrong attempt, guessing one is not a practical
+    /// attack. Being forgiving matters more here than in an ordinary login: this code
+    /// is what stands between the user and losing every long-running task on the
+    /// machine, and it is needed at precisely the moment nothing else is working.
     private static let stepsBack: Int64 = 2
-    private static let stepsForward: Int64 = 1
+    private static let stepsForward: Int64 = 2
+
+    /// How far the accepted code was from the current step, in seconds, last time one
+    /// worked. Non-zero means a clock is drifting and something should say so.
+    private(set) static var lastSkewSeconds: Int64 = 0
 
     private static var seedFile: URL { Storage.dir.appendingPathComponent("totp.seed") }
     private static var usedFile: URL { Storage.dir.appendingPathComponent("totp.used") }
@@ -131,6 +137,7 @@ enum TOTP {
                 continue
             }
             markUsed(candidate)
+            lastSkewSeconds = offset * period
             return true
         }
 
