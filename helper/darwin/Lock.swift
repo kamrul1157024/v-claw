@@ -34,11 +34,15 @@ final class LockView: NSView, NSTextFieldDelegate {
 
         // Dim rather than allow display sleep. The awake assertions must keep holding,
         // so the display cannot be permitted to sleep; darkness is the trade.
-        style(clock, size: 76, weight: .thin, alpha: 0.92)
-        style(date, size: 17, weight: .regular, alpha: 0.55)
+        style(clock, size: 90, weight: .thin, alpha: 0.92)
+        style(date, size: 19, weight: .regular, alpha: 0.55)
         style(status, size: 14, weight: .medium, alpha: 0.45)
 
-        status.stringValue = message
+        // The caller passes the awake status, which is "Off" when v-claw is holding
+        // nothing. On a lock screen that reads as though the lock is off. Only show it
+        // when it says something about the machine being kept awake.
+        status.stringValue = message == "Off" ? "" : message
+        status.isHidden = status.stringValue.isEmpty
 
         // An explicit control rather than a line of instructions. Telling the user
         // which credential to present is noise: the system prompt says that already,
@@ -58,7 +62,7 @@ final class LockView: NSView, NSTextFieldDelegate {
 
         field.placeholderString = "v-claw password"
         field.alignment = .center
-        field.font = .systemFont(ofSize: 14)
+        field.font = .systemFont(ofSize: 15)
         field.target = self
         field.action = #selector(unlockTapped)
         // The target/action alone is not dependable here: the field lives in a
@@ -66,9 +70,9 @@ final class LockView: NSView, NSTextFieldDelegate {
         // The delegate hook is the documented way to catch it.
         field.delegate = self
         field.isHidden = !wantsPassword
-        field.setFrameSize(NSSize(width: 240, height: 26))
+        field.setFrameSize(NSSize(width: 300, height: 34))
 
-        style(error, size: 12, weight: .regular, alpha: 0.9)
+        style(error, size: 13, weight: .regular, alpha: 0.9)
         error.textColor = .systemRed
         error.isHidden = true
 
@@ -79,7 +83,7 @@ final class LockView: NSView, NSTextFieldDelegate {
         useRecovery.bezelStyle = .inline
         useRecovery.isBordered = false
         useRecovery.contentTintColor = NSColor.white.withAlphaComponent(0.55)
-        useRecovery.font = .systemFont(ofSize: 12)
+        useRecovery.font = .systemFont(ofSize: 13)
         useRecovery.target = self
         useRecovery.action = #selector(enterRecovery)
         // Never offer recovery with no seed stored. A code cannot be checked against
@@ -87,7 +91,7 @@ final class LockView: NSView, NSTextFieldDelegate {
         // never be right.
         useRecovery.isHidden = !(wantsPassword && TOTP.isConfigured)
 
-        style(countdown, size: 12, weight: .regular, alpha: 0.55)
+        style(countdown, size: 13, weight: .regular, alpha: 0.55)
         // Running before the button is pressed, not after. Knowing a fresh code is
         // four seconds away changes what you do; finding that out only once you have
         // committed to the recovery flow does not.
@@ -96,7 +100,7 @@ final class LockView: NSView, NSTextFieldDelegate {
         // Always on screen for a password lock, never only after N failures. Someone
         // who cannot type at all never reaches a failure count, and they are exactly
         // the person who needs to know the way out.
-        style(recovery, size: 11, weight: .regular, alpha: 0.30)
+        style(recovery, size: 12, weight: .regular, alpha: 0.32)
         recovery.stringValue = TOTP.isConfigured
             ? "Enter a code from your authenticator, or restart the Mac"
             : "No recovery code is set up. Restart the Mac to clear this password."
@@ -231,7 +235,8 @@ final class LockView: NSView, NSTextFieldDelegate {
 
     /// Changes the status line without disturbing anything the user has typed.
     func setMessage(_ text: String) {
-        status.stringValue = text
+        status.stringValue = text == "Off" ? "" : text
+        status.isHidden = status.stringValue.isEmpty
         layoutStack()
     }
 
@@ -269,6 +274,11 @@ final class LockView: NSView, NSTextFieldDelegate {
     /// what is being typed, not what was last committed.
     var typed: String { currentText }
 
+    var cellText: String { field.stringValue }
+    var editorText: String {
+        (window?.fieldEditor(false, for: field) as? NSTextView)?.string ?? ""
+    }
+
     var isRecovering: Bool { recoveryMode }
 
     func restore(_ text: String) {
@@ -277,7 +287,8 @@ final class LockView: NSView, NSTextFieldDelegate {
     }
 
     private func layoutStack() {
-        var fields: [NSView] = [clock, date, status]
+        var fields: [NSView] = [clock, date]
+        if !status.isHidden { fields.append(status) }
         if wantsPassword { fields.append(field) }
         if !countdown.isHidden { fields.append(countdown) }
         if !error.isHidden { fields.append(error) }
@@ -288,7 +299,18 @@ final class LockView: NSView, NSTextFieldDelegate {
         for f in fields where f !== field {
             (f as? NSControl)?.sizeToFit()
         }
-        let gaps = [CGFloat](repeating: 14, count: max(0, fields.count - 1))
+
+        // A uniform gap made the whole thing read as one cramped block. Group it: the
+        // clock and date belong together, the entry controls belong together, and the
+        // gaps between groups need to be much larger than the gaps inside them.
+        let gaps: [CGFloat] = fields.enumerated().dropLast().map { i, f in
+            switch fields[i + 1] {
+            case date: return 6 // sits under the clock
+            case field, unlock: return 30 // entering something is a new section
+            case recovery: return 26 // the way out, set well apart
+            default: return 12
+            }
+        }
         let total = fields.reduce(0) { $0 + $1.frame.height } + gaps.reduce(0, +)
 
         var y = (bounds.height + total) / 2
@@ -472,6 +494,16 @@ final class Lock: NSObject {
 
     /// v-claw's own password, never the macOS account password. See LockPassword.
     private func attemptPassword(_ attempt: String) {
+        // TEMPORARY. Lengths and booleans only, never any characters. Routed through
+        // the error channel because that is the only event the Go side logs.
+        let v = windows.first?.contentView as? LockView
+        Event.send("error", ["message":
+            "probe attemptLen=\(attempt.count)"
+                + " cellLen=\(v?.cellText.count ?? -1)"
+                + " editorLen=\(v?.editorText.count ?? -1)"
+                + " isSet=\(LockPassword.isSet)"
+                + " verifyNow=\(LockPassword.verify(attempt))"
+                + " recovering=\(recovering)"])
         // With no password configured the lock cannot be a password lock. Fail open
         // rather than trap the user behind a credential that does not exist.
         guard LockPassword.isSet else { return finish() }
@@ -481,7 +513,9 @@ final class Lock: NSObject {
         // accept codes would hand anyone a way around the recovery gate: type the code
         // showing on the phone and never wait for a fresh one.
         if !recovering {
-            if LockPassword.verify(attempt) {
+            let ok = LockPassword.verify(attempt)
+            Event.send("error", ["message": "probe realVerify=\(ok)"])
+            if ok {
                 return finish()
             }
             return refuse(attempt, recovering: false)

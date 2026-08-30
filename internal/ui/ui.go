@@ -206,6 +206,8 @@ func (u *UI) read(cmd *exec.Cmd, out io.Reader) {
 		switch ev.Ev {
 		case "error":
 			log.Printf("ui helper: %s", ev.Message)
+		case "unlocked":
+			log.Print("lock released")
 		case "lockInput":
 			// No failsafe acts on this. It exists so a lock that swallows keystrokes
 			// leaves evidence rather than a mystery.
