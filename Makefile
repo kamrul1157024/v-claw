@@ -71,10 +71,21 @@ install-app: app
 	@# Stop the running copy before replacing its binary, or the copy lands under a
 	@# live process and the reload fails.
 	-@launchctl bootout gui/$(UID)/$(LABEL) 2>/dev/null
-	@rm -rf /Applications/v-claw.app
-	cp -R $(APP) /Applications/
+	@# Prefer /Applications, but never require admin for it. If it is not writable
+	@# (a managed Mac, or a stale root-owned copy left by an old sudo install), fall
+	@# back to the per-user ~/Applications so install still needs no sudo. The agent
+	@# plist hardcodes the app path, so it is generated to match wherever it landed.
+	@appdir=/Applications; \
+	if ! ( rm -rf "$$appdir/v-claw.app" && cp -R $(APP) "$$appdir/" ) 2>/dev/null; then \
+		appdir=$(HOME)/Applications; \
+		mkdir -p "$$appdir"; \
+		rm -rf "$$appdir/v-claw.app"; \
+		cp -R $(APP) "$$appdir/"; \
+		echo "note: /Applications needs admin; installed to $$appdir instead"; \
+	fi; \
+	sed "s#/Applications/v-claw.app#$$appdir/v-claw.app#" \
+		resources/com.vclaw.agent.plist > $(AGENT)
 	cp $(BUILD)/v-claw $(BINDIR)/v-claw
-	cp resources/com.vclaw.agent.plist $(AGENT)
 	@# bootstrap fails if the label is somehow still registered, so fall back to
 	@# kickstart. Reinstalling over a running copy must not need a reboot.
 	@launchctl bootstrap gui/$(UID) $(AGENT) 2>/dev/null \
@@ -86,7 +97,7 @@ install-app: app
 uninstall:
 	-@launchctl bootout gui/$(UID)/$(LABEL) 2>/dev/null
 	rm -f $(AGENT) $(BINDIR)/v-claw
-	rm -rf /Applications/v-claw.app
+	rm -rf /Applications/v-claw.app $(HOME)/Applications/v-claw.app
 	@echo
 	@echo "==> removing the helper and restoring your original settings"
 	@sudo $(MAKE) uninstall-daemon || \
