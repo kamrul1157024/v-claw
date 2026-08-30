@@ -32,6 +32,8 @@ final class Panel: NSObject, NSWindowDelegate {
         ("Every 30 seconds", 30), ("Every minute", 60), ("Every 5 minutes", 300),
     ]
     private let timer = NSPopUpButton()
+    private let showInDock = NSButton(
+        checkboxWithTitle: "Show in the Dock", target: nil, action: nil)
 
     private let lockEnabled = NSButton(checkboxWithTitle: "Enabled", target: nil, action: nil)
     private let setPassword = NSButton(title: "Set password…", target: nil, action: nil)
@@ -71,7 +73,7 @@ final class Panel: NSObject, NSWindowDelegate {
 
     private func build() {
         let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 820),
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 900),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered, defer: false)
         w.title = "v-claw"
@@ -90,6 +92,8 @@ final class Panel: NSObject, NSWindowDelegate {
         root.addArrangedSubview(modeBlock())
         root.addArrangedSubview(divider())
         root.addArrangedSubview(lockBlock())
+        root.addArrangedSubview(divider())
+        root.addArrangedSubview(dockBlock())
         root.addArrangedSubview(divider())
         root.addArrangedSubview(footer())
 
@@ -241,6 +245,21 @@ final class Panel: NSObject, NSWindowDelegate {
         return column(rows, spacing: 8)
     }
 
+    private func dockBlock() -> NSView {
+        showInDock.target = self
+        showInDock.action = #selector(flagToggled(_:))
+        showInDock.identifier = NSUserInterfaceItemIdentifier("show_in_dock")
+
+        let why = NSTextField(wrappingLabelWithString:
+            "The menu bar can quietly run out of room — macOS hides extra icons behind "
+                + "the notch without saying so. The Dock never does.")
+        why.font = .systemFont(ofSize: 10)
+        why.textColor = .tertiaryLabelColor
+        why.preferredMaxLayoutWidth = 330
+
+        return column([heading("Where to find v-claw"), showInDock, why], spacing: 6)
+    }
+
     private func footer() -> NSView {
         let perms = NSButton(title: "Permissions…", target: self, action: #selector(openPermissions))
         let diag = NSButton(title: "Diagnostics…", target: self, action: #selector(openDiagnostics))
@@ -267,6 +286,7 @@ final class Panel: NSObject, NSWindowDelegate {
         modeButtons.forEach { $0.value.state = ($0.key == s.mode) ? .on : .off }
         blockLid.state = s.blockLidSleep ? .on : .off
         keepDisplay.state = s.keepDisplayOn ? .on : .off
+        showInDock.state = s.showInDock ? .on : .off
 
         // The icon carries the state, so no second checkbox is needed to say it.
         let symbol = s.warnOnLidClose ? "speaker.wave.2.fill" : "speaker.slash.fill"

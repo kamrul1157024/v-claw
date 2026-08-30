@@ -78,6 +78,12 @@ type State struct {
 	// Zero warns once and then stays quiet.
 	LidWarnEverySeconds int `json:"lid_warn_every_seconds"`
 
+	// ShowInDock puts v-claw in the Dock as well as the menu bar. The menu bar can
+	// silently run out of room — on a Mac with a notch, macOS hides overflow behind it
+	// with no warning — and then the app has no visible presence at all. The Dock
+	// never overflows.
+	ShowInDock bool `json:"show_in_dock"`
+
 	// ShowWindow is a request from the CLI for the running app to open its window.
 	// The app clears it once handled. It lives here rather than in a separate channel
 	// because the state file is already the one thing both processes share, and a

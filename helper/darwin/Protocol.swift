@@ -14,6 +14,7 @@ struct Command: Decodable {
     let title: String?
     let body: String?
     let text: String?
+    let on: Bool?
 }
 
 /// Everything the UI needs to draw itself. The helper owns no state of its own; it
@@ -26,6 +27,7 @@ struct UIState: Decodable {
     let warnOnLidClose: Bool
     let lidWarnSound: String
     let lidWarnEvery: Int
+    let showInDock: Bool
     let expiresInSeconds: Int?
     let onAC: Bool
     let holding: Bool

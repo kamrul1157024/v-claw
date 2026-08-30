@@ -25,6 +25,15 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
         Event.send("ready")
     }
 
+    /// Clicking the Dock icon of a running app with no open window does nothing by
+    /// default, which makes the icon look broken. Ask the Go side to open the window
+    /// instead: it owns the state, so it can send a complete one rather than the
+    /// helper guessing from something stale.
+    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows visible: Bool) -> Bool {
+        if !visible { Event.send("openWindow") }
+        return true
+    }
+
     // Show notifications even when v-claw is frontmost; the release warning matters
     // more than the convention of suppressing them.
     func userNotificationCenter(
@@ -69,6 +78,9 @@ func handle(_ c: Command) {
     case "hide":
         Panel.shared.close()
 
+    case "dock":
+        setDockVisible(c.on ?? false)
+
     case "permissions":
         Permissions.shared.show(c.state?.hotkeyEnabled ?? false)
 
@@ -90,6 +102,24 @@ func handle(_ c: Command) {
     default:
         Event.send("error", ["message": "unknown command \(c.cmd)"])
     }
+}
+
+/// Shows or hides the Dock icon.
+///
+/// The menu bar is not a reliable place to live. Once it fills up macOS hides new
+/// items behind the notch without saying so, and an app whose only presence has
+/// silently vanished may as well not be running. The Dock never overflows.
+///
+/// .regular also brings a menu bar of our own and an app switcher entry, which is the
+/// honest trade for being findable.
+func setDockVisible(_ on: Bool) {
+    let want: NSApplication.ActivationPolicy = on ? .regular : .accessory
+    guard NSApp.activationPolicy() != want else { return }
+    NSApp.setActivationPolicy(want)
+
+    // Switching to .regular while already running leaves the app unfocused and the
+    // Dock icon inert until something activates it.
+    if on { NSApp.activate(ignoringOtherApps: true) }
 }
 
 func postNotification(title: String, body: String) {

@@ -36,6 +36,7 @@ type State struct {
 	WarnOnLidClose   bool   `json:"warnOnLidClose"`
 	LidWarnSound     string `json:"lidWarnSound"`
 	LidWarnEvery     int    `json:"lidWarnEvery"`
+	ShowInDock       bool   `json:"showInDock"`
 	ExpiresInSeconds *int   `json:"expiresInSeconds"`
 	OnAC             bool   `json:"onAC"`
 	Holding          bool   `json:"holding"`
@@ -80,6 +81,7 @@ type command struct {
 	Title   string `json:"title,omitempty"`
 	Body    string `json:"body,omitempty"`
 	Text    string `json:"text,omitempty"`
+	On      bool   `json:"on,omitempty"`
 }
 
 type UI struct {
@@ -100,9 +102,15 @@ func (u *UI) Events() <-chan Event { return u.events }
 // the menu items rather than fail silently when they are clicked.
 func Available() bool { _, err := helperPath(); return err == nil }
 
-func (u *UI) Show(s State) error        { return u.send(command{Cmd: "show", State: &s}) }
-func (u *UI) Push(s State) error        { return u.send(command{Cmd: "state", State: &s}) }
-func (u *UI) Hide() error               { return u.send(command{Cmd: "hide"}) }
+func (u *UI) Show(s State) error { return u.send(command{Cmd: "show", State: &s}) }
+func (u *UI) Push(s State) error { return u.send(command{Cmd: "state", State: &s}) }
+func (u *UI) Hide() error        { return u.send(command{Cmd: "hide"}) }
+
+// Dock shows or hides v-claw's Dock icon. The helper owns it rather than the tray
+// process, because the helper also owns the window a Dock click should open.
+func (u *UI) Dock(on bool) error {
+	return u.send(command{Cmd: "dock", On: on})
+}
 func (u *UI) Permissions(s State) error { return u.send(command{Cmd: "permissions", State: &s}) }
 func (u *UI) Unlock() error             { return u.send(command{Cmd: "unlock"}) }
 func (u *UI) Diagnostics(t string) error {

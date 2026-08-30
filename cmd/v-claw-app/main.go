@@ -71,6 +71,9 @@ func onReady() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
+	// Before anything else, so someone whose menu bar is full still has a way in.
+	a.applyDock()
+
 	if !*background {
 		a.openWindow()
 	}
@@ -271,6 +274,10 @@ func (a *app) sync() {
 		a.openWindow()
 	}
 
+	if a.st.ShowInDock {
+		a.applyDock()
+	}
+
 	a.checkLid(want)
 	a.maybeIdleLock()
 	a.menu.render(a.view(want))
@@ -310,6 +317,7 @@ func (a *app) uiState() ui.State {
 		WarnOnLidClose:   a.st.WarnOnLidClose,
 		LidWarnSound:     a.st.LidWarnSound,
 		LidWarnEvery:     a.st.LidWarnEverySeconds,
+		ShowInDock:       a.st.ShowInDock,
 		ExpiresInSeconds: expires,
 		OnAC:             a.onAC,
 		Holding:          a.pow.Holding(),
@@ -404,6 +412,9 @@ func (a *app) handleUI(ev ui.Event) {
 			a.st.BlockLidSleep = ev.Value
 		case "keep_display_on":
 			a.st.KeepDisplayOn = ev.Value
+		case "show_in_dock":
+			a.st.ShowInDock = ev.Value
+			a.applyDock()
 		case "warn_on_lid_close":
 			a.st.WarnOnLidClose = ev.Value
 		}
@@ -443,6 +454,10 @@ func (a *app) handleUI(ev ui.Event) {
 		a.st.Lock.Engaged = false
 	case "windowClosed":
 		a.windowOpen = false
+	case "openWindow":
+		// The Dock icon was clicked with no window showing.
+		a.openWindow()
+		return
 	case "diagnose":
 		// Built here rather than in the helper: the helper is deliberately ignorant
 		// of pmset, launchd and configuration profiles.
@@ -460,6 +475,17 @@ func (a *app) handleUI(ev ui.Event) {
 		return
 	}
 	a.save()
+}
+
+// applyDock keeps the Dock icon in step with the setting.
+//
+// Turning it on also starts the helper and keeps it running, because the Dock icon
+// belongs to that process. Without this the icon would vanish whenever the helper was
+// reaped for being idle.
+func (a *app) applyDock() {
+	if err := a.ui.Dock(a.st.ShowInDock); err != nil {
+		log.Printf("dock: %v", err)
+	}
 }
 
 func (a *app) openWindow() {
