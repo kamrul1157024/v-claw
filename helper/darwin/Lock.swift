@@ -166,7 +166,25 @@ final class LockView: NSView, NSTextFieldDelegate {
             : NSColor.white.withAlphaComponent(0.45)
     }
 
-    @objc private func unlockTapped() { Lock.shared.attemptUnlock(password: field.stringValue) }
+    @objc private func unlockTapped() { Lock.shared.attemptUnlock(password: currentText) }
+
+    /// What is actually typed, not what was last committed.
+    ///
+    /// NSTextField.stringValue returns the cell's value, and the field editor does not
+    /// flush into it until editing ends. Clicking Unlock read the stale value — empty
+    /// on the first attempt — so the password was refused and the field cleared, and
+    /// only the second try worked. validateEditing commits first; the field editor is
+    /// read directly as well, since validateEditing is a no-op when the field is not
+    /// mid-edit and the two together cover both paths.
+    var currentText: String {
+        field.validateEditing()
+        if let editor = window?.fieldEditor(false, for: field) as? NSTextView,
+           !editor.string.isEmpty
+        {
+            return editor.string
+        }
+        return field.stringValue
+    }
 
     /// Return submits, the same as pressing Unlock.
     ///
@@ -223,6 +241,7 @@ final class LockView: NSView, NSTextFieldDelegate {
         error.stringValue = text
         error.isHidden = false
         field.stringValue = ""
+        (window?.fieldEditor(false, for: field) as? NSTextView)?.string = ""
 
         // Stay in code entry after a bad code. Dropping back to the password would
         // make the user re-enter recovery and wait out another boundary.
@@ -246,7 +265,9 @@ final class LockView: NSView, NSTextFieldDelegate {
         window?.makeFirstResponder(field)
     }
 
-    var typed: String { field.stringValue }
+    /// Same staleness applies here: carrying text across a display change must copy
+    /// what is being typed, not what was last committed.
+    var typed: String { currentText }
 
     var isRecovering: Bool { recoveryMode }
 
