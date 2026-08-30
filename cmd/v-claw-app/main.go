@@ -126,6 +126,11 @@ type app struct {
 	// rather than every poll while the lid stays shut.
 	lidClosed bool
 
+	// wasOnAC drives the unplug warning, and warnedOnBattery keeps it to once per
+	// stretch on battery rather than every poll.
+	wasOnAC         bool
+	warnedOnBattery bool
+
 	// lastLidWarn drives the repeat. Cleared when the lid opens, so reopening and
 	// closing again always warns immediately.
 	lastLidWarn time.Time
@@ -286,6 +291,7 @@ func (a *app) sync() {
 		a.applyDock()
 	}
 
+	a.checkBattery(want)
 	a.checkLid(want)
 	a.maybeIdleLock()
 	a.menu.render(a.view(want))
@@ -326,6 +332,7 @@ func (a *app) uiState() ui.State {
 		LidWarnSound:     a.st.LidWarnSound,
 		LidWarnEvery:     a.st.LidWarnEverySeconds,
 		ShowInDock:       a.st.ShowInDock,
+		OnBatteryAwake:   !a.onAC && a.pow.Holding(),
 		ExpiresInSeconds: expires,
 		OnAC:             a.onAC,
 		Holding:          a.pow.Holding(),
@@ -339,6 +346,31 @@ func (a *app) uiState() ui.State {
 
 		RestartAuthWarning: a.restartAuth.Warning,
 	}
+}
+
+// checkBattery warns when v-claw keeps the machine awake after the adapter is pulled.
+//
+// In auto mode unplugging releases, which is the whole point. In always mode it does
+// not: the machine keeps running until the battery is flat, and nothing on screen says
+// so. Unplugging is also the moment someone is about to walk off with it.
+func (a *app) checkBattery(holding bool) {
+	onAC := a.onAC
+	justUnplugged := !onAC && a.wasOnAC
+	a.wasOnAC = onAC
+
+	if onAC || !holding {
+		a.warnedOnBattery = false
+		return
+	}
+	if a.warnedOnBattery && !justUnplugged {
+		return
+	}
+	a.warnedOnBattery = true
+
+	log.Print("still holding the machine awake on battery")
+	_ = a.ui.Notify("v-claw is still holding",
+		"Running on battery and set to stay awake. It will not sleep, and the battery "+
+			"will keep draining.")
 }
 
 // checkLid sounds a warning when the lid shuts while v-claw is holding the machine
@@ -378,7 +410,12 @@ func (a *app) checkLid(holding bool) {
 	}
 
 	a.lastLidWarn = now
-	log.Printf("lid shut while holding the machine awake — warning (%s)", a.st.LidWarnSound)
+	where := "on AC"
+	if !a.onAC {
+		where = "on battery"
+	}
+	log.Printf("lid shut while holding the machine awake, %s — warning (%s)",
+		where, a.st.LidWarnSound)
 	go warnLidClosed(a.st.LidWarnSound)
 }
 

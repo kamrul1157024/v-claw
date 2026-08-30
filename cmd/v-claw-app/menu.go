@@ -205,6 +205,12 @@ func (a *app) statusLine() string {
 		tier = "basic, lid best effort"
 	}
 
+	// Say it in the one line that is always visible. Awake on battery drains towards
+	// flat, and there is no missing adapter to notice.
+	if !a.onAC {
+		tier = "on battery, draining"
+	}
+
 	if a.st.ExpiresAt != nil {
 		left := time.Until(*a.st.ExpiresAt).Round(time.Minute)
 		return fmt.Sprintf("%s — awake, %s left (%s)", src, left, tier)

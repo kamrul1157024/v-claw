@@ -16,6 +16,7 @@ final class Panel: NSObject, NSWindowDelegate {
     private let statusLabel = NSTextField(labelWithString: "")
     private let tierLabel = NSTextField(labelWithString: "")
     private let hintLabel = NSTextField(wrappingLabelWithString: "")
+    private let batteryWarn = NSTextField(wrappingLabelWithString: "")
 
     private var modeButtons: [String: NSButton] = [:]
     private let blockLid = NSButton(checkboxWithTitle: "Block lid sleep", target: nil, action: nil)
@@ -118,9 +119,14 @@ final class Panel: NSObject, NSWindowDelegate {
         hintLabel.textColor = .systemOrange
         hintLabel.preferredMaxLayoutWidth = 330
 
+        batteryWarn.font = .systemFont(ofSize: 11, weight: .medium)
+        batteryWarn.textColor = .systemOrange
+        batteryWarn.preferredMaxLayoutWidth = 330
+        batteryWarn.isHidden = true
+
         let line = NSStackView(views: [statusDot, statusLabel])
         line.spacing = 8
-        return column([line, tierLabel, hintLabel], spacing: 4)
+        return column([line, tierLabel, batteryWarn, hintLabel], spacing: 4)
     }
 
     private func modeBlock() -> NSView {
@@ -290,7 +296,17 @@ final class Panel: NSObject, NSWindowDelegate {
         hintLabel.stringValue = s.lidHint
         hintLabel.isHidden = s.lidHint.isEmpty
 
-        statusDot.image = dot(s.holding ? .systemGreen : (s.mode == "off" ? .systemGray : .systemOrange))
+        // Awake on battery drains towards flat with nothing to stop it, and unlike the
+        // AC case there is no missing adapter to notice.
+        batteryWarn.isHidden = !s.onBatteryAwake
+        batteryWarn.stringValue = "\u{26A0}\u{FE0E} Running on battery and staying awake. "
+            + "It will not sleep, and the battery will keep draining."
+
+        statusDot.image = dot(
+            s.onBatteryAwake ? .systemOrange
+                : s.holding ? .systemGreen
+                : s.mode == "off" ? .systemGray
+                : .systemOrange)
 
         modeButtons.forEach { $0.value.state = ($0.key == s.mode) ? .on : .off }
         blockLid.state = s.blockLidSleep ? .on : .off

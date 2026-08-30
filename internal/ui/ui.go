@@ -30,13 +30,17 @@ const helperName = "v-claw-ui"
 
 // State is what the helper needs to draw itself. The field names are the wire format.
 type State struct {
-	Mode             string `json:"mode"`
-	BlockLidSleep    bool   `json:"blockLidSleep"`
-	KeepDisplayOn    bool   `json:"keepDisplayOn"`
-	WarnOnLidClose   bool   `json:"warnOnLidClose"`
-	LidWarnSound     string `json:"lidWarnSound"`
-	LidWarnEvery     int    `json:"lidWarnEvery"`
-	ShowInDock       bool   `json:"showInDock"`
+	Mode           string `json:"mode"`
+	BlockLidSleep  bool   `json:"blockLidSleep"`
+	KeepDisplayOn  bool   `json:"keepDisplayOn"`
+	WarnOnLidClose bool   `json:"warnOnLidClose"`
+	LidWarnSound   string `json:"lidWarnSound"`
+	LidWarnEvery   int    `json:"lidWarnEvery"`
+	ShowInDock     bool   `json:"showInDock"`
+
+	// OnBatteryAwake means v-claw is holding the machine awake with no adapter
+	// attached, so the battery is draining towards flat with nothing to stop it.
+	OnBatteryAwake   bool   `json:"onBatteryAwake"`
 	ExpiresInSeconds *int   `json:"expiresInSeconds"`
 	OnAC             bool   `json:"onAC"`
 	Holding          bool   `json:"holding"`

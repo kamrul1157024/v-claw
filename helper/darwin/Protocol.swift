@@ -28,6 +28,7 @@ struct UIState: Decodable {
     let lidWarnSound: String
     let lidWarnEvery: Int
     let showInDock: Bool
+    let onBatteryAwake: Bool
     let expiresInSeconds: Int?
     let onAC: Bool
     let holding: Bool
