@@ -1,7 +1,11 @@
 # v-claw specification
 
-A macOS menu bar app that stops the laptop sleeping and locking while it runs on the
-power adapter, and that can hold a virtual lock screen while you are away.
+A menu bar app that stops the laptop sleeping and locking while it runs on the power
+adapter, and that can hold a virtual lock screen while you are away.
+
+macOS is the only platform implemented today. Linux and Windows are planned, and
+[08-cross-platform.md](08-cross-platform.md) covers what that already requires of the
+current code.
 
 Read [00-overview.md](00-overview.md) first. It carries the constraints that explain
 every later decision.
@@ -9,7 +13,7 @@ every later decision.
 | Document | Contents |
 |---|---|
 | [00-overview.md](00-overview.md) | The problem, the goals, the admin constraint, and the decisions made |
-| [01-macos-behaviour.md](01-macos-behaviour.md) | What macOS does, measured on real hardware, plus the one open question |
+| [01-macos-behaviour.md](01-macos-behaviour.md) | Platform notes for macOS, measured on real hardware, plus the one open question |
 | [02-architecture.md](02-architecture.md) | Three binaries, two tiers, and the state file |
 | [03-safety.md](03-safety.md) | Thermal risk, release rules, and managed-Mac diagnostics |
 | [04-virtual-lock.md](04-virtual-lock.md) | The privacy screen, and what it is not |
@@ -33,7 +37,10 @@ reported after it is read back from the system.
 
 ## Status
 
-Specification stage. macOS first, Linux and Windows to follow.
+Implemented on macOS. Linux and Windows to follow.
+
+The platform boundary already exists in `internal/power` and `internal/paths`, and
+cross-compilation in CI keeps it honest: nothing above `internal/power` may import `C`.
 
 Three probes in `experiments/` are built and passing. They were written to retire the
 riskiest assumptions before any real code is committed.

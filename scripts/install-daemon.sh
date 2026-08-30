@@ -47,15 +47,20 @@ echo "  $EXE"
 echo "  $PLIST"
 echo "  $DATA  (owned by $OWNER)"
 echo
-printf "continue? [y/N] "
-read -r reply
-case "$reply" in
-y | Y) ;;
-*)
-	echo "cancelled"
-	exit 1
-	;;
-esac
+
+# Skip the prompt when there is no terminal to answer it, so this can be driven from a
+# script. sudo has already authenticated the caller by this point.
+if [ -t 0 ]; then
+	printf "continue? [y/N] "
+	read -r reply
+	case "$reply" in
+	y | Y) ;;
+	*)
+		echo "cancelled"
+		exit 1
+		;;
+	esac
+fi
 
 # State lives at one fixed path so the root daemon never has to guess which user's
 # home directory to watch. The installing user owns it; the daemon only reads it.

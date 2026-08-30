@@ -69,7 +69,7 @@ type menu struct {
 func (a *app) buildMenu() {
 	m := &menu{events: make(chan event, 8)}
 
-	systray.SetTemplateIcon(icon.Off, icon.Off)
+	systray.SetIcon(icon.Off)
 	systray.SetTooltip("v-claw")
 
 	m.status = systray.AddMenuItem("", "")
@@ -141,7 +141,7 @@ func (a *app) buildMenu() {
 
 func (m *menu) render(v view) {
 	m.status.SetTitle(v.status)
-	systray.SetTemplateIcon(v.glyph, v.glyph)
+	systray.SetIcon(v.glyph)
 	systray.SetTooltip(v.status)
 
 	check(m.off, v.mode == state.ModeOff)

@@ -1,4 +1,8 @@
-# 01 — How macOS behaves
+# 01 — Platform notes: macOS
+
+Platform-specific findings for the one platform implemented today. Linux and Windows
+get their own equivalents when they land; the mechanisms differ and are summarised in
+[08-cross-platform.md](08-cross-platform.md).
 
 Everything here was measured, not assumed. Re-measure it when macOS changes.
 

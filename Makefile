@@ -14,7 +14,7 @@ GO       ?= go
 SWIFTC   ?= swiftc
 
 .PHONY: all build app icons test lint clean \
-        install uninstall install-daemon uninstall-daemon diagnose explain
+        install install-app uninstall install-daemon uninstall-daemon diagnose explain
 
 all: build app
 
@@ -42,26 +42,55 @@ lint:
 	GOOS=linux   $(GO) build ./internal/paths ./internal/power ./internal/state
 	GOOS=windows $(GO) build ./internal/paths ./internal/power ./internal/state
 
+# ------------------------------------------------------------ full install
+
+# Installs the app, then the privileged helper. The sudo prompt happens once, here, and
+# never again: no toggle in the app ever asks for a password.
+#
+# The helper step is allowed to fail. Someone who cannot get admin rights still ends up
+# with a working app, which is the whole point of the two-tier design.
+install: install-app
+	@echo
+	@echo "==> the helper needs admin once, for guaranteed lid-close blocking"
+	@echo "    it is 3 lines; read them with: make explain"
+	@echo
+	@sudo sh scripts/install-daemon.sh || { \
+		echo; \
+		echo "helper not installed. v-claw still works:"; \
+		echo "  idle sleep and display sleep are blocked"; \
+		echo "  lid-close blocking is best effort"; \
+		echo "add it later with: sudo make install-daemon"; \
+	}
+
 # ---------------------------------------------------------------- no sudo
 
-install: app
+UID := $(shell id -u)
+
+install-app: app
 	@mkdir -p $(BINDIR) $(dir $(AGENT))
+	@# Stop the running copy before replacing its binary, or the copy lands under a
+	@# live process and the reload fails.
+	-@launchctl bootout gui/$(UID)/$(LABEL) 2>/dev/null
 	@rm -rf /Applications/v-claw.app
 	cp -R $(APP) /Applications/
 	cp $(BUILD)/v-claw $(BINDIR)/v-claw
 	cp resources/com.vclaw.agent.plist $(AGENT)
-	-@launchctl bootout gui/$(shell id -u)/$(LABEL) 2>/dev/null
-	launchctl bootstrap gui/$(shell id -u) $(AGENT)
+	@# bootstrap fails if the label is somehow still registered, so fall back to
+	@# kickstart. Reinstalling over a running copy must not need a reboot.
+	@launchctl bootstrap gui/$(UID) $(AGENT) 2>/dev/null \
+		|| launchctl kickstart -k gui/$(UID)/$(LABEL)
 	@echo
-	@echo "installed. v-claw is in your menu bar."
-	@echo "for guaranteed lid-close blocking:  sudo make install-daemon"
+	@echo "v-claw is in your menu bar."
+	@echo "  cli: $(BINDIR)/v-claw   (add to PATH if it is not already)"
 
 uninstall:
-	-@launchctl bootout gui/$(shell id -u)/$(LABEL) 2>/dev/null
+	-@launchctl bootout gui/$(UID)/$(LABEL) 2>/dev/null
 	rm -f $(AGENT) $(BINDIR)/v-claw
 	rm -rf /Applications/v-claw.app
-	@echo "removed. the root daemon, if installed, is still there:"
-	@echo "  sudo make uninstall-daemon"
+	@echo
+	@echo "==> removing the helper and restoring your original settings"
+	@sudo $(MAKE) uninstall-daemon || \
+		echo "helper left in place; remove it with: sudo make uninstall-daemon"
 
 # ------------------------------------------------------------------- sudo
 

@@ -1,15 +1,18 @@
 // Package icon carries the menu bar art. The bytes are embedded, so the binaries never
 // look for a file at runtime.
 //
-// Menu bar icons must be template images: one colour plus alpha. macOS tints them black
-// in light mode and white in dark mode. A colour render cannot be used.
+// These are colour images, not macOS template images. A template gets tinted black or
+// white by the system, which would throw away the state signal that colour carries.
+// Callers must use systray.SetIcon, never SetTemplateIcon.
 package icon
 
 import _ "embed"
 
-// Claw states. Fill against outline is the primary signal, because the icon is a safety
-// device: an active hold with the lid closed is a thermal risk, and it must be readable
-// at a glance in a crowded menu bar.
+// Claw states. Two signals carry the state, so neither has to be relied on alone:
+// fill against outline, and grey against orange against red.
+//
+// This matters because the icon is a safety device. An active hold with the lid closed
+// is a thermal risk, and it has to be readable at a glance in a crowded menu bar.
 var (
 	//go:embed png/off.png
 	Off []byte

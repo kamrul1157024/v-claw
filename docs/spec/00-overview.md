@@ -2,7 +2,7 @@
 
 ## The problem
 
-A MacBook sleeps when the lid closes. It also locks the screen after an idle delay.
+A laptop sleeps when the lid closes. It also locks the screen after an idle delay.
 This interrupts long-running work that must survive a closed lid, such as background
 agents, builds, and remote sessions.
 
@@ -17,8 +17,8 @@ In a bag, that is a real thermal risk.
 
 ## What v-claw does
 
-v-claw is a macOS menu bar app. It holds the machine awake, it shows that state in the
-menu bar at all times, and it ties the state to the power adapter. It turns on when the
+v-claw is a menu bar app. It holds the machine awake, it shows that state in the menu
+bar at all times, and it ties the state to the power adapter. It turns on when the
 adapter is connected. It releases when the adapter is removed.
 
 The name comes from the 3D-printed claw that props a laptop lid open. v-claw does the
@@ -39,12 +39,13 @@ described in [04-virtual-lock.md](04-virtual-lock.md).
 
 ## Platforms
 
-macOS ships first. Linux and Windows follow.
+macOS is implemented. Linux and Windows follow.
 
-v1 is macOS only, but it must not paint the other two into a corner. The two-tier design
-below is not a macOS idea. It holds on all three, because all three separate "ask the OS
-to stay awake", which any user can do, from "change the lid-close policy", which is
-privileged. On Linux the second one is free as well, through a logind inhibitor.
+Only macOS is supported today, but that must not paint the other two into a corner. The
+two-tier design below is not a macOS idea. It holds on all three, because all three
+separate "ask the OS to stay awake", which any user can do, from "change the lid-close
+policy", which is privileged. On Linux the second one is free as well, through a logind
+inhibitor.
 
 [08-cross-platform.md](08-cross-platform.md) lists the four rules this puts on v1. The
 main one is that all platform code sits behind one interface, and no macOS vocabulary
@@ -52,6 +53,7 @@ leaks above it.
 
 ## Non-goals
 
+- Mobile and tablet platforms.
 - A settings window. The menu and the lock screen are the whole interface.
 - Replacing the real macOS lock. The virtual lock is a privacy screen, not a security
   boundary.

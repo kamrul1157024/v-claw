@@ -1,7 +1,7 @@
 # 08 — Cross-platform
 
-macOS ships first. Linux and Windows follow. This document keeps v1 from painting them
-into a corner.
+macOS is implemented. Linux and Windows follow. This document is what keeps the current
+code from painting them into a corner.
 
 ## The good news
 

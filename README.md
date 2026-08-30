@@ -1,18 +1,16 @@
 <h1 align="center">v-claw</h1>
 
 <p align="center">
-  <img src="docs/images/states.png" alt="v-claw menu bar icon states" width="320">
-</p>
-
-<p align="center">
-  <strong>A macOS menu bar app that holds your laptop open.</strong><br>
+  <strong>A menu bar app that holds your laptop open.</strong><br>
   Stops the machine sleeping when the lid closes, stops the screen locking,<br>
   and ties both to the power adapter.
 </p>
 
 <p align="center">
-  <img alt="platform" src="https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey">
-  <img alt="language" src="https://img.shields.io/badge/Go-1.26-00ADD8">
+  <img alt="platforms" src="https://img.shields.io/badge/macOS-supported-success">
+  <img alt="linux" src="https://img.shields.io/badge/Linux-planned-lightgrey">
+  <img alt="windows" src="https://img.shields.io/badge/Windows-planned-lightgrey">
+  <img alt="language" src="https://img.shields.io/badge/Go-1.24-00ADD8">
   <img alt="licence" src="https://img.shields.io/badge/licence-MIT-blue">
   <img alt="status" src="https://img.shields.io/badge/status-alpha-orange">
 </p>
@@ -44,17 +42,23 @@ Plug in, and it engages. Unplug, and it releases. The menu bar always shows whic
 
 ## Install
 
-Two commands, split by the privilege each one needs.
+> [!NOTE]
+> **macOS is the only platform supported today.** Linux and Windows are on the way, and
+> the platform boundary is already in the code. See [Platforms](#platforms).
 
 ```sh
 git clone https://github.com/kamrul1157024/v-claw
 cd v-claw
-
-make install          # no sudo. Menu bar app, idle and display sleep blocked.
-make install-daemon   # sudo, once. Adds guaranteed lid-close blocking.
+make install
 ```
 
-The first command is enough to be useful. The second is an upgrade.
+`make install` does both. It prompts for your password **once**, for the helper. No
+toggle in the app ever asks again.
+
+If you cannot get admin rights, that step is skipped and you still get a working app:
+idle sleep and display sleep are blocked, and lid-close blocking becomes best effort.
+Add the helper later with `sudo make install-daemon`, or skip it deliberately with
+`make install-app`.
 
 `make install` builds from source, so the app carries no quarantine attribute and
 Gatekeeper does not block it. No Developer ID and no notarization are needed.
@@ -62,19 +66,24 @@ Gatekeeper does not block it. No Developer ID and no notarization are needed.
 **Requirements:** macOS 13+, Go 1.24+, and Xcode Command Line Tools. Xcode itself is
 not required.
 
-### Why the split
+### Why only one password prompt
 
-Many people run Macs that an organisation manages, where admin rights arrive only by
-request and only for a short window.
+Many people run machines that an organisation manages, where admin rights arrive only
+by request and only for a short window.
 
-So v-claw asks for admin **once**, at install, and never again. The privileged install
-script is three lines, and you can show an IT reviewer exactly what it does:
+So v-claw asks for admin **once**, at install, and never again. Only one small service
+is privileged, and everything else runs as you. The privileged install script is three
+lines, and you can show an IT reviewer exactly what it does before asking:
 
 ```sh
 make explain
 ```
 
-Everything else runs unprivileged.
+| Target | Privilege | Installs |
+|---|---|---|
+| `make install` | one prompt | Everything. Skips the helper if admin is refused. |
+| `make install-app` | none | App and CLI only |
+| `make install-daemon` | sudo | The helper only |
 
 ## Usage
 
@@ -104,13 +113,15 @@ The menu bar icon is the whole interface.
 
 | | State | Meaning |
 |---|---|---|
-| 1 | **Off** | v-claw is changing nothing |
-| 2 | **Armed** | Auto mode, on battery, waiting for the adapter |
-| 3 | **Active** | Sleep is blocked right now |
-| 4 | **Basic** | Active, but lid blocking is best effort — the helper is not installed |
-| 5 | **Overridden** | Something is overriding v-claw. Run `v-claw diagnose` |
+| 1 | **Off**, grey | v-claw is changing nothing |
+| 2 | **Armed**, orange outline | Auto mode, on battery, waiting for the adapter |
+| 3 | **Active**, orange filled | Sleep is blocked right now |
+| 4 | **Basic**, gap in the bar | Active, but lid blocking is best effort — the helper is not installed |
+| 5 | **Overridden**, red | Something is overriding v-claw. Run `v-claw diagnose` |
 
 The claw grips a bar. The bar is the lid.
+
+Two signals carry the state, colour and fill, so neither is load-bearing alone.
 
 ### Command line
 
@@ -194,23 +205,29 @@ Full specification in [docs/spec](docs/spec/).
 
 ## Platforms
 
-macOS ships first. Linux and Windows are planned, and the platform boundary is already
-in the code.
+v-claw is built to run everywhere. macOS is the only platform supported today; the
+other two are planned, and the platform boundary already exists in the code and is
+enforced by cross-compilation in CI.
 
-| Platform | Status | Lid blocking |
-|---|---|---|
-| macOS | **v1** | `pmset disablesleep`, needs the helper |
-| Linux | planned | logind inhibitor — **needs no root at all** |
-| Windows | planned | power-scheme `LIDACTION`, needs admin |
+| Platform | Status | Stay awake | Lid blocking |
+|---|---|---|---|
+| **macOS** | **supported** | IOKit assertions | `pmset disablesleep`, needs the helper |
+| Linux | planned | logind `Inhibit` | logind `handle-lid-switch` — **needs no root at all** |
+| Windows | planned | `SetThreadExecutionState` | power-scheme `LIDACTION`, needs admin |
+
+The two-tier model is not a macOS idea. All three systems separate "ask the OS to stay
+awake", which any user can do, from "change the lid-close policy", which is privileged.
+On Linux even the second one is free, so both tiers arrive at once.
+
+Details in [docs/spec/08-cross-platform.md](docs/spec/08-cross-platform.md).
 
 ## Uninstall
 
 ```sh
-make uninstall           # no sudo
-sudo make uninstall-daemon
+make uninstall
 ```
 
-Your original power settings are restored.
+Removes everything and restores the power settings recorded before v-claw first ran.
 
 ## Licence
 

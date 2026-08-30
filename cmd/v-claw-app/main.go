@@ -235,7 +235,10 @@ func (a *app) adoptExternal() {
 		return
 	}
 	a.st = ext
-	a.written = ext
+	// Save rather than just adopt. The CLI leaves the heartbeat as it found it, so
+	// without this the file keeps a stale timestamp until the next beat, and the
+	// daemon's watchdog would read a live app as dead and release.
+	a.save()
 }
 
 func (a *app) save() {
