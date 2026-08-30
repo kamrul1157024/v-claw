@@ -33,6 +33,7 @@ struct UIState: Decodable {
     let lockPolicy: String
     let lockIdleMinutes: Int
     let hotkeyEnabled: Bool
+    let restartAuthWarning: String
 }
 
 // MARK: - helper -> Go

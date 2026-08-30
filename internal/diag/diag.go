@@ -99,7 +99,22 @@ func Report(version string) string {
 	}
 	p("")
 
+	ra := CheckRestartAuth()
+	p("restart authentication")
+	p("  password required  %v", ra.Required)
+	p("  FileVault          %v", ra.FileVault)
+	if ra.AutoLogin != "" {
+		p("  automatic login    %s", ra.AutoLogin)
+	}
+	if ra.GuestLogin {
+		p("  guest account      enabled")
+	}
+	p("")
+
 	warnings := profiles(ctx, &b)
+	if ra.Warning != "" {
+		warnings = append(warnings, ra.Warning)
+	}
 	if len(warnings) == 0 {
 		p("warnings")
 		p("  none")

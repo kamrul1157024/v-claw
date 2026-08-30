@@ -44,6 +44,10 @@ func onReady() {
 		st:  load(),
 		ui:  ui.New(),
 	}
+	a.restartAuth = diag.CheckRestartAuth()
+	if a.restartAuth.Warning != "" {
+		log.Printf("warning: %s", a.restartAuth.Warning)
+	}
 	a.buildMenu()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -87,6 +91,11 @@ type app struct {
 	written state.State
 
 	onAC bool
+
+	// restartAuth is read once at start. Automatic login and FileVault do not change
+	// during a session, and both shell out, so re-reading every five seconds would be
+	// waste.
+	restartAuth diag.RestartAuth
 }
 
 // sameIntent compares everything the user chose, ignoring the heartbeat. The heartbeat
@@ -274,6 +283,8 @@ func (a *app) uiState() ui.State {
 		LockPolicy:       string(a.st.Lock.Policy),
 		LockIdleMinutes:  a.st.Lock.IdleMinutes,
 		HotkeyEnabled:    false,
+
+		RestartAuthWarning: a.restartAuth.Warning,
 	}
 }
 

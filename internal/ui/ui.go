@@ -43,6 +43,11 @@ type State struct {
 	LockPolicy       string `json:"lockPolicy"`
 	LockIdleMinutes  int    `json:"lockIdleMinutes"`
 	HotkeyEnabled    bool   `json:"hotkeyEnabled"`
+
+	// RestartAuthWarning is non-empty when a restart would reach the desktop without
+	// a password. The virtual lock leans on restart being authenticated, so when that
+	// stops being true the user has to be told.
+	RestartAuthWarning string `json:"restartAuthWarning"`
 }
 
 // Event is what the user did. Pointer fields distinguish "not sent" from "sent false",

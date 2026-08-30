@@ -215,9 +215,16 @@ The password is stored as a salted PBKDF2 hash in the login Keychain, never in p
 text and never in `state.json`.
 
 **Forgot it? Restart the Mac.** The password is bound to the current boot, so a restart
-clears it. That is the whole recovery story, and it works while you are staring at the
-locked screen — no terminal and no second machine. The trade is that you set it again
-after each restart, which on a machine kept awake for days is rare.
+clears it. That works while you are staring at the locked screen — no terminal, no
+second machine.
+
+That is a recovery path rather than a bypass, because **the restart is authenticated**:
+macOS lands on the login window, and with FileVault on it asks before the disk unlocks.
+So the lock's real floor is your account password, enforced by the OS.
+
+v-claw checks that assumption still holds. Turn on automatic login and a restart reaches
+the desktop with no password — the lock would become decoration, and nothing else on the
+system would tell you. `v-claw diagnose` reports it, and the panel says so in red.
 
 ## On a managed Mac
 

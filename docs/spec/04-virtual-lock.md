@@ -108,6 +108,30 @@ auto-unlock nor a dead end, and no such escape has been found.
 There is no auto-unlock after N failures, for the reason above. After five, the lock
 screen says how to get out instead.
 
+### Why restart is a recovery path and not a bypass
+
+Clearing the password on restart only works because **the restart itself is
+authenticated**. macOS lands on the login window, and with FileVault on it demands the
+password before the disk even unlocks. So the way around the virtual lock is gated by
+the account password, enforced by the OS rather than by v-claw.
+
+That is the honest security summary: the virtual lock is a privacy screen backed by a
+light password, and its floor is your macOS credential.
+
+The assumption is load-bearing, and it can be turned off without warning:
+
+| Setting | Effect if changed |
+|---|---|
+| Automatic login enabled | Restart reaches the desktop with no password. The lock becomes decoration. |
+| Guest account enabled | A restart offers a way in that is not your account. |
+| FileVault off | Still a login window, but no pre-boot authentication. |
+
+`CheckRestartAuth` in `internal/diag` reads all three. The result appears in
+`v-claw diagnose`, and any warning is shown in red in the control panel, beside the
+password option where the decision is made. Detecting this matters more than it might
+seem: nothing else on the system would tell the user that their lock had quietly become
+meaningless.
+
 ### Forgetting it: restart
 
 **The password is bound to the current boot.** The stored record carries the boot time
