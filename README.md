@@ -212,8 +212,12 @@ removed: the system prompt has a Cancel button, so it needed a fail-open valve, 
 valve was itself a bypass — cancel three times and the lock opened.
 
 The password is stored as a salted PBKDF2 hash in the login Keychain, never in plain
-text and never in `state.json`. Forgot it? `v-claw lock-reset`, or just quit v-claw —
-it is a window, not a security boundary.
+text and never in `state.json`.
+
+**Forgot it? Restart the Mac.** The password is bound to the current boot, so a restart
+clears it. That is the whole recovery story, and it works while you are staring at the
+locked screen — no terminal and no second machine. The trade is that you set it again
+after each restart, which on a machine kept awake for days is rare.
 
 ## On a managed Mac
 

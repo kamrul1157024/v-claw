@@ -24,6 +24,7 @@ final class Panel: NSObject, NSWindowDelegate {
 
     private let lockEnabled = NSButton(checkboxWithTitle: "Enabled", target: nil, action: nil)
     private let setPassword = NSButton(title: "Set password…", target: nil, action: nil)
+    private let passwordWarn = NSTextField(wrappingLabelWithString: "")
     private var policyButtons: [String: NSButton] = [:]
     private let idle = NSPopUpButton()
 
@@ -170,6 +171,19 @@ final class Panel: NSObject, NSWindowDelegate {
         setPassword.action = #selector(editPassword)
         rows.append(setPassword)
 
+        passwordWarn.font = .systemFont(ofSize: 11)
+        passwordWarn.textColor = .systemOrange
+        passwordWarn.preferredMaxLayoutWidth = 330
+        passwordWarn.isHidden = true
+        rows.append(passwordWarn)
+
+        let clears = NSTextField(wrappingLabelWithString:
+            "Cleared when you restart the Mac, so a forgotten password never locks you out.")
+        clears.font = .systemFont(ofSize: 10)
+        clears.textColor = .tertiaryLabelColor
+        clears.preferredMaxLayoutWidth = 330
+        rows.append(clears)
+
 
         idle.removeAllItems()
         idle.addItems(withTitles: idleChoices.map(\.0))
@@ -220,6 +234,14 @@ final class Panel: NSObject, NSWindowDelegate {
         setPassword.isHidden = s.lockPolicy != "password"
         setPassword.isEnabled = s.lockEnabled
         setPassword.title = LockPassword.isSet ? "Change password…" : "Set password…"
+
+        // Saying nothing here would let someone believe the lock is protected when a
+        // restart has already cleared the password.
+        let missing = s.lockPolicy == "password" && !LockPassword.isSet
+        passwordWarn.isHidden = !missing
+        passwordWarn.stringValue = missing
+            ? "No password set — the lock will open on any key."
+            : ""
         idle.isEnabled = s.lockEnabled
         idle.selectItem(at: idleChoices.firstIndex { $0.1 == s.lockIdleMinutes } ?? 0)
     }

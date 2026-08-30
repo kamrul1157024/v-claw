@@ -224,8 +224,11 @@ final class Lock: NSObject {
         // No auto-unlock after N failures. An earlier version did that as a safety
         // valve and it was simply a bypass: anyone could fail three times on purpose
         // and walk in. Tell the user how to get out instead of opening the door.
+        // Recovery has to be something anyone can do while staring at this screen,
+        // with no terminal and no second machine. Restarting clears the password,
+        // because the stored record is bound to the current boot.
         let text = authFailures >= 5
-            ? "Incorrect password.  Forgotten it? Power off, or run `v-claw lock-reset` from another session."
+            ? "Incorrect password.  Forgotten it? Restart the Mac — that clears it."
             : "Incorrect password"
         windows.forEach { ($0.contentView as? LockView)?.reject(text) }
 

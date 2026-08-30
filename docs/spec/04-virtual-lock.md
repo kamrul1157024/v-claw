@@ -108,17 +108,29 @@ auto-unlock nor a dead end, and no such escape has been found.
 There is no auto-unlock after N failures, for the reason above. After five, the lock
 screen says how to get out instead.
 
-### Forgetting it
+### Forgetting it: restart
 
-This must stay cheap, because a lock that can trap you out of your own machine is worse
-than no lock.
+**The password is bound to the current boot.** The stored record carries the boot time
+from `kern.boottime`, and a record from an earlier boot is deleted on sight. So a
+restart always clears both the lock and the password.
 
-```sh
-v-claw lock-reset      # forgets the password, reverts the policy to `none`
-```
+That is the entire recovery story, and it is deliberately something anyone can do while
+staring at the locked screen: no terminal, no second machine, no documentation. A lock
+that can shut you out of your own computer is worse than no lock, and this one cannot.
 
-Quitting v-claw also removes the lock, because it is a window and not a security
-boundary. That caps how strong this can ever be, and the cap is deliberate.
+The cost is re-setting the password after each restart. On a machine v-claw exists for,
+one kept awake for days at a time, restarts are rare enough that the guarantee is worth
+more than the convenience.
+
+`v-claw lock-reset` still clears it without a restart, for convenience rather than
+rescue. Quitting v-claw removes the lock too, though not the password.
+
+Two consequences the UI must state, because silence here would let someone believe they
+are protected when they are not:
+
+- After a restart, `policy` is still `password` but no password exists. The lock fails
+  open, and the panel says **"No password set — the lock will open on any key."**
+- The lock screen offers the way out after five wrong attempts: *restart the Mac*.
 
 ## Engaging the lock
 
