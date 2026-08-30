@@ -132,7 +132,14 @@ enum TOTP {
     ///   code someone glimpsed earlier is worthless even inside the skew window.
     static func verify(_ entered: String, notBefore: Int64? = nil) -> Bool {
         let cleaned = entered.filter(\.isNumber)
-        guard cleaned.count == digits, let key = secret() else { return false }
+        guard cleaned.count == digits else {
+            lastRejection = "not a six-digit code"
+            return false
+        }
+        guard let key = secret() else {
+            lastRejection = "no recovery code is set up"
+            return false
+        }
 
         let step = Int64(Date().timeIntervalSince1970) / period
         var sawUsed = false

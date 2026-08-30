@@ -49,6 +49,12 @@ final class LockView: NSView, NSTextFieldDelegate {
         unlock.font = .systemFont(ofSize: 13, weight: .medium)
         unlock.target = self
         unlock.action = #selector(unlockTapped)
+        // Return goes through performKeyEquivalent, which the window runs over the
+        // content view before any first-responder dispatch. That makes it independent
+        // of the field editor, which is where both previous attempts came unstuck:
+        // target/action and the delegate's doCommandBy hang off the same code path.
+        // It is also how the NSAlert sheets elsewhere in the app already behave.
+        unlock.keyEquivalent = "\r"
 
         field.placeholderString = "v-claw password"
         field.alignment = .center
@@ -174,8 +180,14 @@ final class LockView: NSView, NSTextFieldDelegate {
     /// the user types has a full window of life rather than the seconds left on a code
     /// that was already half spent when they looked at it.
     @objc private func enterRecovery() {
-        recoveryMode = true
         Lock.shared.armRecovery()
+        Lock.shared.enterRecoveryEverywhere()
+    }
+
+    /// Puts this view into code entry. Called on every screen, not just the one that
+    /// was clicked, so the state cannot differ between displays.
+    func beginRecovery() {
+        recoveryMode = true
         useRecovery.isHidden = true
         error.isHidden = true
         field.stringValue = ""
@@ -300,9 +312,21 @@ final class Lock: NSObject {
     private var message = ""
     private var authFailures = 0
 
-    /// Codes at or before this step are refused. Pinned when the user asks to recover,
-    /// so only a code produced afterwards counts.
+    /// Codes before this step are refused. Pinned when the user asks to recover, so a
+    /// code glimpsed earlier is worthless.
+    ///
+    /// Pinned at the current step rather than the next one. The next step looks tidier
+    /// — "only codes minted after you asked" — but it rejects every phone running even
+    /// slightly slow: such a phone still shows the current step when the gate opens,
+    /// and the user is refused with a message blaming a code they never saw. Recovery
+    /// failing is far worse than a glimpsed code being usable for one more step, since
+    /// the whole feature exists so that a lockout is not catastrophic.
     private var recoveryFloor: Int64?
+
+    /// Recovery belongs to the controller, not to a view. It used to live on LockView
+    /// while attemptPassword read it from windows.first, so on a second display
+    /// clicking "Use recovery code" left recovery permanently unreachable.
+    private var recovering = false
 
     func engage(policy: String, message: String) {
         guard windows.isEmpty else { return }
@@ -398,7 +422,9 @@ final class Lock: NSObject {
     // losing it here would be the same bug updateMessage used to cause.
     @objc private func screensChanged() {
         let typed = (windows.first?.contentView as? LockView)?.typed ?? ""
+        let wasRecovering = recovering
         cover()
+        if wasRecovering { enterRecoveryEverywhere() }
         if !typed.isEmpty {
             (windows.first?.contentView as? LockView)?.restore(typed)
         }
@@ -412,7 +438,12 @@ final class Lock: NSObject {
     /// Called when the user opts into the recovery flow. Everything from the current
     /// step backwards is dead from here on.
     func armRecovery() {
-        recoveryFloor = TOTP.currentStep + 1
+        recovering = true
+        recoveryFloor = TOTP.currentStep
+    }
+
+    func enterRecoveryEverywhere() {
+        windows.forEach { ($0.contentView as? LockView)?.beginRecovery() }
     }
 
     /// v-claw's own password, never the macOS account password. See LockPassword.
@@ -421,8 +452,6 @@ final class Lock: NSObject {
         // rather than trap the user behind a credential that does not exist.
         guard LockPassword.isSet else { return finish() }
         guard !attempt.isEmpty else { return }
-
-        let recovering = (windows.first?.contentView as? LockView)?.isRecovering ?? false
 
         // The password field takes the password and nothing else. Letting it also
         // accept codes would hand anyone a way around the recovery gate: type the code
@@ -494,6 +523,7 @@ final class Lock: NSObject {
         windows.removeAll()
         NSApp.presentationOptions = []
         authFailures = 0
+        recovering = false
         recoveryFloor = nil
         NotificationCenter.default.removeObserver(
             self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
