@@ -279,12 +279,12 @@ final class Panel: NSObject, NSWindowDelegate {
         return column([heading("Where to find v-claw"), showInDock, why], spacing: 6)
     }
 
-    /// Warns when notifications are off.
+    /// Notes when notifications are off.
     ///
-    /// Every warning v-claw raises when nobody is looking — the timer expiring, still
-    /// holding on battery — goes out as a notification. With permission denied they go
-    /// nowhere, silently, and the app looks like it is working. Clicking opens the
-    /// permissions window rather than making the user hunt for it.
+    /// Not an alarm any more: the warnings fall back to an on-screen banner, so nothing
+    /// is lost. It is still worth saying, because the absence of Notification Centre
+    /// entries is otherwise unexplained, and because the cause — an unnotarized build
+    /// that macOS will not grant them to — is not something the user can guess.
     private func permsBlock() -> NSView {
         permsWarn.title = ""
         permsWarn.isBordered = false
@@ -338,8 +338,8 @@ final class Panel: NSObject, NSWindowDelegate {
         Permissions.notificationsGranted { [weak self] ok in
             guard let self else { return }
             self.permsWarn.isHidden = ok
-            self.permsWarn.title = "\u{26A0}\u{FE0E} Notifications are off — v-claw cannot "
-                + "warn you when it releases. Click to fix."
+            self.permsWarn.title = "\u{26A0}\u{FE0E} Notifications are off, so warnings "
+                + "appear on screen instead. Click for why."
         }
 
         // The icon carries the state, so no second checkbox is needed to say it.

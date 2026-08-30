@@ -48,8 +48,21 @@ final class Permissions: NSObject {
             switch s.authorizationStatus {
             case .notDetermined:
                 UNUserNotificationCenter.current()
-                    .requestAuthorization(options: [.alert, .sound]) { _, _ in
-                        DispatchQueue.main.async { done() }
+                    .requestAuthorization(options: [.alert, .sound]) { ok, err in
+                        DispatchQueue.main.async {
+                            // macOS refuses outright for a bundle it does not trust,
+                            // and shows the user nothing at all. Say so, rather than
+                            // leaving a button that appears to be broken.
+                            if !ok, err != nil {
+                                Banner.shared.show(
+                                    title: "macOS will not allow notifications",
+                                    body: "v-claw is built from source and not notarized, "
+                                        + "so the system refuses them. Warnings will "
+                                        + "appear on screen like this instead.",
+                                    seconds: 9)
+                            }
+                            done()
+                        }
                     }
             default:
                 DispatchQueue.main.async {
@@ -106,7 +119,9 @@ final class Permissions: NSObject {
 
         notifyRow = Row(
             title: "Notifications",
-            detail: "Tell you when v-claw releases on its own, so a forgotten setting cannot quietly keep the machine awake.",
+            detail: "Tell you when v-claw releases on its own. If macOS refuses them — "
+                + "likely, since v-claw is built from source and not notarized — the "
+                + "same warnings appear on screen instead, so nothing is lost.",
             action: "Grant Permission",
             onGrant: { done in
                 Permissions.grantNotifications(done)

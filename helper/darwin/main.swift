@@ -127,10 +127,13 @@ func setDockVisible(_ on: Bool) {
 }
 
 func postNotification(title: String, body: String) {
-    guard Permissions.notificationsAvailable else {
-        Event.send("error", ["message": "notifications need the app bundle; run the installed copy"])
-        return
-    }
+    // Always draw the banner. macOS refuses notifications to an ad-hoc signed bundle,
+    // and the refusal is silent — the whole point of these messages is that nobody is
+    // watching the app when they fire, so a delivery path that can quietly fail is no
+    // path at all.
+    Banner.shared.show(title: title, body: body)
+
+    guard Permissions.notificationsAvailable else { return }
     let content = UNMutableNotificationContent()
     content.title = title
     content.body = body
