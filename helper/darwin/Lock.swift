@@ -41,7 +41,9 @@ final class LockView: NSView {
         unlock.target = self
         unlock.action = #selector(unlockTapped)
 
-        field.placeholderString = "v-claw password"
+        field.placeholderString = TOTP.isConfigured
+            ? "Password or 6-digit code"
+            : "v-claw password"
         field.alignment = .center
         field.font = .systemFont(ofSize: 14)
         field.target = self
@@ -57,7 +59,9 @@ final class LockView: NSView {
         // who cannot type at all never reaches a failure count, and they are exactly
         // the person who needs to know the way out.
         style(recovery, size: 11, weight: .regular, alpha: 0.30)
-        recovery.stringValue = "Restart the Mac to clear this password"
+        recovery.stringValue = TOTP.isConfigured
+            ? "Enter a code from your authenticator, or restart the Mac"
+            : "Restart the Mac to clear this password"
         recovery.isHidden = !wantsPassword
 
         [clock, date, status, field, error, unlock, recovery].forEach(addSubview)
@@ -273,13 +277,24 @@ final class Lock: NSObject {
             return finish()
         }
 
+        // A code from the authenticator also gets you in. It is a second credential
+        // rather than an escape valve: it needs the phone holding the seed, and each
+        // code lasts about a minute. It exists because the other way out is a restart,
+        // and a restart destroys the long-running work this machine is being kept
+        // awake for in the first place.
+        if TOTP.isConfigured, TOTP.verify(attempt) {
+            Event.send("error", ["message": "unlocked with a recovery code"])
+            return finish()
+        }
+
         authFailures += 1
 
         // No auto-unlock after N failures. An earlier version did that as a safety
         // valve and it was simply a bypass: anyone could fail three times on purpose
         // and walk in. Tell the user how to get out instead of opening the door.
         // The way out is on screen permanently, so this only has to report the failure.
-        windows.forEach { ($0.contentView as? LockView)?.reject("Incorrect password") }
+        let msg = TOTP.isConfigured ? "Incorrect password or code" : "Incorrect password"
+        windows.forEach { ($0.contentView as? LockView)?.reject(msg) }
 
         // A wrong password must cost something, or the lock is brute-forced by holding
         // a key down. PBKDF2 already makes each attempt slow; this makes repeated ones

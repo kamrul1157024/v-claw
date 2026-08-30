@@ -116,6 +116,33 @@ is no escape valve to catch it. A file is weaker at rest and that is the accepte
 trade: what is stored is a hash rather than the secret, the disk is covered by
 FileVault, and this was never a security boundary.
 
+### Recovery code
+
+A time-based one-time code, RFC 6238, from any authenticator app.
+
+It exists because the other way back in is a restart, and **a restart destroys the
+thing v-claw is for**. People keep a machine awake for days because long-running work
+is on it; telling them to reboot throws away exactly what the app was protecting. A
+code from a phone costs nothing.
+
+This is a second credential, not a valve. It cannot be provoked by breaking something,
+it needs the phone holding the seed, and each code lasts about a minute. Restart remains
+the fallback for when the phone is not to hand.
+
+| | |
+|---|---|
+| Algorithm | HMAC-SHA1, 6 digits, 30-second period. Verified against the RFC 6238 vectors |
+| Clock skew | One step either side accepted |
+| Replay | Each time step is burned on use, so a watched code cannot be reused |
+| Enrolment | QR plus the base32 secret in text, since a phone cannot scan the screen it is unlocking |
+| Storage | `0600` file beside the state |
+| Network | None. Enrolment and verification are entirely offline |
+
+The seed is a real secret, unlike the password record which is only a hash. Anything
+running as this user can read it. That is a smaller weakness than it looks: anything
+that can read the seed can also delete the password record outright, so it grants no
+capability the attacker did not already have.
+
 ### No escape valves
 
 There is no auto-unlock. Not after N failures, not on error, not when something looks

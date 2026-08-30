@@ -40,17 +40,7 @@ import Security
 
 enum LockPassword {
     /// Beside the state file, so it follows the same directory resolution.
-    private static var file: URL {
-        let dir = ProcessInfo.processInfo.environment["VCLAW_DIR"]
-            ?? "/usr/local/var/v-claw"
-        var url = URL(fileURLWithPath: dir)
-        if !FileManager.default.fileExists(atPath: dir) {
-            url = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Application Support/v-claw")
-            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        }
-        return url.appendingPathComponent("lock.secret")
-    }
+    private static var file: URL { Storage.dir.appendingPathComponent("lock.secret") }
 
     private static let saltBytes = 16
     private static let hashBytes = 32
@@ -114,16 +104,7 @@ enum LockPassword {
 
     // MARK: storage
 
-    private static func store(_ blob: Data) -> Bool {
-        do {
-            try blob.write(to: file, options: [.atomic, .completeFileProtection])
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o600], ofItemAtPath: file.path)
-            return true
-        } catch {
-            return false
-        }
-    }
+    private static func store(_ blob: Data) -> Bool { Storage.write(blob, to: file) }
 
     /// Seconds since the epoch at which this machine last booted. Records carrying any
     /// other value belong to a previous boot and are discarded.

@@ -25,6 +25,7 @@ final class Panel: NSObject, NSWindowDelegate {
     private let lockEnabled = NSButton(checkboxWithTitle: "Enabled", target: nil, action: nil)
     private let setPassword = NSButton(title: "Set password…", target: nil, action: nil)
     private let passwordWarn = NSTextField(wrappingLabelWithString: "")
+    private let setRecovery = NSButton(title: "Recovery code…", target: nil, action: nil)
     private let restartWarn = NSTextField(wrappingLabelWithString: "")
     private var policyButtons: [String: NSButton] = [:]
     private let idle = NSPopUpButton()
@@ -59,7 +60,7 @@ final class Panel: NSObject, NSWindowDelegate {
 
     private func build() {
         let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 390, height: 720),
+            contentRect: NSRect(x: 0, y: 0, width: 390, height: 770),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered, defer: false)
         w.title = "v-claw"
@@ -172,6 +173,11 @@ final class Panel: NSObject, NSWindowDelegate {
         setPassword.action = #selector(editPassword)
         rows.append(setPassword)
 
+        setRecovery.bezelStyle = .rounded
+        setRecovery.target = self
+        setRecovery.action = #selector(editRecovery)
+        rows.append(setRecovery)
+
         passwordWarn.font = .systemFont(ofSize: 11)
         passwordWarn.textColor = .systemOrange
         passwordWarn.preferredMaxLayoutWidth = 330
@@ -243,6 +249,9 @@ final class Panel: NSObject, NSWindowDelegate {
         setPassword.isHidden = s.lockPolicy != "password"
         setPassword.isEnabled = s.lockEnabled
         setPassword.title = LockPassword.isSet ? "Change password…" : "Set password…"
+        setRecovery.isHidden = s.lockPolicy != "password"
+        setRecovery.isEnabled = s.lockEnabled
+        setRecovery.title = TOTP.isConfigured ? "Recovery code ✓" : "Set up recovery code…"
 
         // Saying nothing here would let someone believe the lock is protected when a
         // restart has already cleared the password.
@@ -341,6 +350,75 @@ final class Panel: NSObject, NSWindowDelegate {
             default:
                 break
             }
+        }
+    }
+
+    /// Enrols an authenticator app, so a forgotten password does not cost a restart.
+    ///
+    /// Restarting is the other way back in, and it throws away every long-running task
+    /// on a machine that is being kept awake precisely to run them. A code from a phone
+    /// costs nothing.
+    @objc private func editRecovery() {
+        guard let window else { return }
+
+        if TOTP.isConfigured {
+            let a = NSAlert()
+            a.messageText = "Recovery code is set up"
+            a.informativeText = "Your authenticator can unlock the virtual lock. "
+                + "Removing it leaves a restart as the only way back in."
+            a.addButton(withTitle: "Keep")
+            a.addButton(withTitle: "Remove")
+            a.beginSheetModal(for: window) { r in
+                if r == .alertSecondButtonReturn {
+                    TOTP.forget()
+                    self.setRecovery.title = "Set up recovery code…"
+                }
+            }
+            return
+        }
+
+        guard let secret = TOTP.enrol() else {
+            return warn("Could not create a recovery secret.")
+        }
+
+        let account = NSFullUserName()
+        let uri = TOTP.uri(secret: secret, account: account)
+
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 260))
+        if let cg = TOTP.qr(for: uri) {
+            let iv = NSImageView(frame: NSRect(x: 50, y: 60, width: 200, height: 200))
+            iv.image = NSImage(cgImage: cg, size: NSSize(width: 200, height: 200))
+            box.addSubview(iv)
+        }
+        // Shown as well as the QR, because a phone cannot scan the screen it is
+        // unlocking, and some people type it into a password manager instead.
+        let code = NSTextField(labelWithString: secret)
+        code.frame = NSRect(x: 0, y: 26, width: 300, height: 20)
+        code.alignment = .center
+        code.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        code.isSelectable = true
+        box.addSubview(code)
+
+        let hint = NSTextField(labelWithString: "Scan with any authenticator app")
+        hint.frame = NSRect(x: 0, y: 4, width: 300, height: 18)
+        hint.alignment = .center
+        hint.font = .systemFont(ofSize: 11)
+        hint.textColor = .secondaryLabelColor
+        box.addSubview(hint)
+
+        let alert = NSAlert()
+        alert.messageText = "Recovery code"
+        alert.informativeText = "Enter a code from your authenticator at the lock screen "
+            + "to get back in without restarting. Nothing leaves this Mac."
+        alert.accessoryView = box
+        alert.addButton(withTitle: "Done")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { r in
+            if r == .alertSecondButtonReturn {
+                TOTP.forget()
+                return
+            }
+            self.setRecovery.title = "Recovery code ✓"
         }
     }
 

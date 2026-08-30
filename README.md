@@ -215,7 +215,15 @@ The password is stored as a salted PBKDF2 hash in a `0600` file, never in plain 
 never in `state.json`. There are **no escape valves** — nothing auto-unlocks, because a
 valve that fires when something looks broken is a valve an attacker can provoke.
 
-**Forgot it? Restart the Mac.** The password is bound to the current boot, so a restart
+**Forgot it? Enter a code from your authenticator**, or restart the Mac.
+
+Set up a recovery code in the panel and any authenticator app — Google Authenticator,
+1Password, Authy — can unlock the virtual lock. Standard TOTP, entirely offline, and
+each code is burned after use so a watched one cannot be reused.
+
+It matters because the alternative is a restart, and **a restart destroys the thing
+v-claw is for**: you keep a machine awake for days because long-running work is on it.
+A code costs nothing. The password is bound to the current boot, so a restart
 clears it. That works while you are staring at the locked screen — no terminal, no
 second machine.
 
