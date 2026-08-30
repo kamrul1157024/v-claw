@@ -38,6 +38,7 @@ final class Panel: NSObject, NSWindowDelegate {
     private let lockEnabled = NSButton(checkboxWithTitle: "Enabled", target: nil, action: nil)
     private let setPassword = NSButton(title: "Set password…", target: nil, action: nil)
     private let passwordWarn = NSTextField(wrappingLabelWithString: "")
+    private let noRecovery = NSTextField(wrappingLabelWithString: "")
     private let setRecovery = NSButton(title: "Recovery code…", target: nil, action: nil)
     private let restartWarn = NSTextField(wrappingLabelWithString: "")
     private var policyButtons: [String: NSButton] = [:]
@@ -210,6 +211,14 @@ final class Panel: NSObject, NSWindowDelegate {
         setRecovery.action = #selector(editRecovery)
         rows.append(setRecovery)
 
+        noRecovery.font = .systemFont(ofSize: 11, weight: .medium)
+        noRecovery.textColor = .systemOrange
+        noRecovery.preferredMaxLayoutWidth = 330
+        noRecovery.stringValue = "⚠︎ No recovery code. If you forget this password the "
+            + "only way back in is restarting, which loses whatever is running."
+        noRecovery.isHidden = true
+        rows.append(noRecovery)
+
         passwordWarn.font = .systemFont(ofSize: 11)
         passwordWarn.textColor = .systemOrange
         passwordWarn.preferredMaxLayoutWidth = 330
@@ -320,6 +329,12 @@ final class Panel: NSObject, NSWindowDelegate {
         setRecovery.isHidden = s.lockPolicy != "password"
         setRecovery.isEnabled = s.lockEnabled
         setRecovery.title = TOTP.isConfigured ? "Recovery code ✓" : "Set up recovery code…"
+
+        // A password with no recovery code means the only way back in is a restart,
+        // which kills every long-running task on the machine — the exact thing v-claw
+        // exists to protect. Worth saying loudly, at the moment it becomes true.
+        let exposed = s.lockPolicy == "password" && LockPassword.isSet && !TOTP.isConfigured
+        noRecovery.isHidden = !exposed
 
         // Saying nothing here would let someone believe the lock is protected when a
         // restart has already cleared the password.
@@ -479,11 +494,11 @@ final class Panel: NSObject, NSWindowDelegate {
                 guard pw.stringValue == confirm.stringValue else {
                     return self.warn("Those did not match.")
                 }
-                if LockPassword.set(pw.stringValue) {
-                    self.setPassword.title = "Change password…"
-                } else {
-                    self.warn("Could not save to the Keychain.")
+                guard LockPassword.set(pw.stringValue) else {
+                    return self.warn("Could not save the password.")
                 }
+                self.setPassword.title = "Change password…"
+                if !TOTP.isConfigured { self.offerRecovery() }
             case .alertThirdButtonReturn:
                 LockPassword.clear()
                 self.setPassword.title = "Set password…"
@@ -599,6 +614,32 @@ final class Panel: NSObject, NSWindowDelegate {
                 return self.warn("Could not save the recovery secret.")
             }
             self.setRecovery.title = "Recovery code ✓"
+        }
+    }
+
+    /// Asked straight after a password is set, while the consequence is still in mind.
+    ///
+    /// Without a recovery code the only way past a forgotten password is a restart, and
+    /// a restart throws away every long-running task — which is the whole reason the
+    /// machine is being kept awake. Better to raise it here than to leave someone to
+    /// discover it while locked out.
+    private func offerRecovery() {
+        guard let window else { return }
+        let a = NSAlert()
+        a.messageText = "Set up a recovery code?"
+        a.informativeText = """
+        If you forget this password, the only way back in is restarting the Mac — and \
+        that ends everything running on it.
+
+        A code from your phone gets you back in without losing anything. It takes about \
+        thirty seconds to set up.
+        """
+        a.addButton(withTitle: "Set one up")
+        a.addButton(withTitle: "Not now")
+        a.beginSheetModal(for: window) { r in
+            if r == .alertFirstButtonReturn {
+                DispatchQueue.main.async { self.editRecovery() }
+            }
         }
     }
 

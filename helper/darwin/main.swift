@@ -21,6 +21,10 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
         if Permissions.notificationsAvailable {
             UNUserNotificationCenter.current().delegate = self
         }
+        // Permissions used to be applied only at write time, so a secret written by an
+        // older build keeps its looser mode until something happens to rewrite it.
+        Storage.tightenAll()
+
         readCommands()
         Event.send("ready")
     }

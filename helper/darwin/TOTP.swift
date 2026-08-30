@@ -204,6 +204,7 @@ enum TOTP {
     // MARK: storage
 
     private static func secret() -> Data? {
+        Storage.tighten(seedFile)
         guard let text = try? String(contentsOf: seedFile, encoding: .utf8) else { return nil }
         return unbase32(text.trimmingCharacters(in: .whitespacesAndNewlines))
     }
@@ -273,5 +274,29 @@ enum Storage {
         } catch {
             return false
         }
+    }
+
+    /// Tightens every secret on disk. Called once at startup rather than waiting for
+    /// something to read them, since a seed is written at enrolment and then not read
+    /// again until the moment it is needed — which could be weeks.
+    static func tightenAll() {
+        for name in ["lock.secret", "totp.seed", "totp.used"] {
+            tighten(dir.appendingPathComponent(name))
+        }
+    }
+
+    /// Tightens a secret that an earlier version left readable by the group.
+    ///
+    /// Permissions were only ever applied at write time, so a file created before that
+    /// was fixed keeps its loose mode indefinitely — nothing rewrites a TOTP seed once
+    /// it is enrolled. Checked on every read, which costs a stat and removes a whole
+    /// class of "it was fine when I tested it" divergence between machines.
+    static func tighten(_ url: URL) {
+        let fm = FileManager.default
+        guard let attrs = try? fm.attributesOfItem(atPath: url.path),
+              let mode = (attrs[.posixPermissions] as? NSNumber)?.intValue,
+              mode & 0o077 != 0
+        else { return }
+        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 }

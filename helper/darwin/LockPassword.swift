@@ -122,6 +122,7 @@ enum LockPassword {
     }
 
     private static func load() -> Data? {
+        Storage.tighten(file)
         guard let blob = try? Data(contentsOf: file),
               blob.count == saltBytes + hashBytes + bootBytes
         else { return nil }
