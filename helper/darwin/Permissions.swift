@@ -35,6 +35,42 @@ final class Permissions: NSObject {
             .requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
+    /// Asks for notification permission, or sends the user to System Settings.
+    ///
+    /// requestAuthorization only ever prompts once. After the first answer it returns
+    /// the stored decision immediately and shows nothing, so a button wired straight to
+    /// it does nothing at all for anyone who has already said no — which is exactly
+    /// when they are clicking it. Once denied, the only route is Settings.
+    static func grantNotifications(_ done: @escaping () -> Void) {
+        guard notificationsAvailable else { return done() }
+
+        UNUserNotificationCenter.current().getNotificationSettings { s in
+            switch s.authorizationStatus {
+            case .notDetermined:
+                UNUserNotificationCenter.current()
+                    .requestAuthorization(options: [.alert, .sound]) { _, _ in
+                        DispatchQueue.main.async { done() }
+                    }
+            default:
+                DispatchQueue.main.async {
+                    openNotificationSettings()
+                    done()
+                }
+            }
+        }
+    }
+
+    /// Opens the Notifications pane, scrolled to this app where macOS allows it.
+    static func openNotificationSettings() {
+        let candidates = [
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension",
+            "x-apple.systempreferences:com.apple.preference.notifications",
+        ]
+        for raw in candidates {
+            if let url = URL(string: raw), NSWorkspace.shared.open(url) { return }
+        }
+    }
+
     static func notificationsGranted(_ done: @escaping (Bool) -> Void) {
         guard notificationsAvailable else { return done(false) }
         UNUserNotificationCenter.current().getNotificationSettings { s in
@@ -73,11 +109,7 @@ final class Permissions: NSObject {
             detail: "Tell you when v-claw releases on its own, so a forgotten setting cannot quietly keep the machine awake.",
             action: "Grant Permission",
             onGrant: { done in
-                guard Permissions.notificationsAvailable else { return done() }
-                UNUserNotificationCenter.current()
-                    .requestAuthorization(options: [.alert, .sound]) { _, _ in
-                        DispatchQueue.main.async { done() }
-                    }
+                Permissions.grantNotifications(done)
             })
 
         axRow = Row(
@@ -133,6 +165,13 @@ final class Permissions: NSObject {
         Permissions.notificationsGranted { [weak self] ok in
             self?.notifyRow?.setGranted(ok)
         }
+        guard Permissions.notificationsAvailable else { return }
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] s in
+            let determined = s.authorizationStatus != .notDetermined
+            DispatchQueue.main.async {
+                self?.notifyRow?.setActionTitle(determined ? "Open Settings" : "Grant Permission")
+            }
+        }
         axRow?.setGranted(Permissions.accessibilityGranted)
     }
 
@@ -182,8 +221,12 @@ final class Permissions: NSObject {
 
         func setGranted(_ ok: Bool) {
             status.stringValue = ok ? "✓ Granted" : "Not granted"
-            status.textColor = ok ? .systemGreen : .secondaryLabelColor
+            status.textColor = ok ? .systemGreen : .systemOrange
             button.isHidden = ok
         }
+
+        /// "Grant Permission" is a lie once macOS has stopped asking. Say where the
+        /// click actually goes.
+        func setActionTitle(_ t: String) { button.title = t }
     }
 }

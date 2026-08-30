@@ -17,6 +17,7 @@ final class Panel: NSObject, NSWindowDelegate {
     private let tierLabel = NSTextField(labelWithString: "")
     private let hintLabel = NSTextField(wrappingLabelWithString: "")
     private let batteryWarn = NSTextField(wrappingLabelWithString: "")
+    private let permsWarn = NSButton()
 
     private var modeButtons: [String: NSButton] = [:]
     private let blockLid = NSButton(checkboxWithTitle: "Block lid sleep", target: nil, action: nil)
@@ -97,6 +98,7 @@ final class Panel: NSObject, NSWindowDelegate {
         root.addArrangedSubview(divider())
         root.addArrangedSubview(dockBlock())
         root.addArrangedSubview(divider())
+        root.addArrangedSubview(permsBlock())
         root.addArrangedSubview(footer())
 
         let content = NSView()
@@ -277,6 +279,24 @@ final class Panel: NSObject, NSWindowDelegate {
         return column([heading("Where to find v-claw"), showInDock, why], spacing: 6)
     }
 
+    /// Warns when notifications are off.
+    ///
+    /// Every warning v-claw raises when nobody is looking — the timer expiring, still
+    /// holding on battery — goes out as a notification. With permission denied they go
+    /// nowhere, silently, and the app looks like it is working. Clicking opens the
+    /// permissions window rather than making the user hunt for it.
+    private func permsBlock() -> NSView {
+        permsWarn.title = ""
+        permsWarn.isBordered = false
+        permsWarn.alignment = .left
+        permsWarn.contentTintColor = .systemOrange
+        permsWarn.font = .systemFont(ofSize: 11, weight: .medium)
+        permsWarn.target = self
+        permsWarn.action = #selector(openPermissions)
+        permsWarn.isHidden = true
+        return permsWarn
+    }
+
     private func footer() -> NSView {
         let perms = NSButton(title: "Permissions…", target: self, action: #selector(openPermissions))
         let diag = NSButton(title: "Diagnostics…", target: self, action: #selector(openDiagnostics))
@@ -314,6 +334,13 @@ final class Panel: NSObject, NSWindowDelegate {
         blockLid.state = s.blockLidSleep ? .on : .off
         keepDisplay.state = s.keepDisplayOn ? .on : .off
         showInDock.state = s.showInDock ? .on : .off
+
+        Permissions.notificationsGranted { [weak self] ok in
+            guard let self else { return }
+            self.permsWarn.isHidden = ok
+            self.permsWarn.title = "\u{26A0}\u{FE0E} Notifications are off — v-claw cannot "
+                + "warn you when it releases. Click to fix."
+        }
 
         // The icon carries the state, so no second checkbox is needed to say it.
         let symbol = s.warnOnLidClose ? "speaker.wave.2.fill" : "speaker.slash.fill"
