@@ -69,6 +69,10 @@ func onReady() {
 	}
 	a.buildMenu()
 
+	// Catch the macOS "reopen" event so clicking the app icon while v-claw is
+	// already running opens the window instead of doing nothing.
+	installReopenHandler()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
 	// Before anything else, so someone whose menu bar is full still has a way in.
@@ -174,6 +178,10 @@ func (a *app) run(ctx context.Context) {
 			a.sync()
 		case ev := <-a.ui.Events():
 			a.handleUI(ev)
+			a.sync()
+		case <-reopen:
+			// The app icon was clicked while v-claw was already running.
+			a.openWindow()
 			a.sync()
 		}
 	}
