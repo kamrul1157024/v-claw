@@ -291,27 +291,34 @@ final class Panel: NSObject, NSWindowDelegate {
     @objc private func editPassword() {
         guard let window else { return }
 
-        let pw = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        // A plain container with explicit frames, not an NSStackView. A stack view
+        // clears autoresizing on whatever it arranges, and a secure text field has no
+        // intrinsic width, so inside one the fields collapse to slivers.
+        let width: CGFloat = 260
+        let pw = NSSecureTextField(frame: NSRect(x: 0, y: 30, width: width, height: 24))
         pw.placeholderString = "New password"
-        let confirm = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        let confirm = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: width, height: 24))
         confirm.placeholderString = "Confirm"
 
-        let stack = NSStackView(views: [pw, confirm])
-        stack.orientation = .vertical
-        stack.spacing = 8
-        stack.frame = NSRect(x: 0, y: 0, width: 260, height: 56)
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 54))
+        box.addSubview(pw)
+        box.addSubview(confirm)
+        pw.nextKeyView = confirm
+        confirm.nextKeyView = pw
 
         let alert = NSAlert()
         alert.messageText = "v-claw lock password"
         alert.informativeText = """
         Used only for the virtual lock. This is not your macOS password.
 
-        Forgetting it locks nothing away: quitting v-claw removes the lock, because it         is a window, not a security boundary.
+        It is cleared when you restart the Mac, so a forgotten password never locks you \
+        out. You will need to set it again after each restart.
         """
-        alert.accessoryView = stack
+        alert.accessoryView = box
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         if LockPassword.isSet { alert.addButton(withTitle: "Remove") }
+        alert.window.initialFirstResponder = pw
 
         alert.beginSheetModal(for: window) { response in
             switch response {

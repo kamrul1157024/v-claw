@@ -80,15 +80,60 @@ func TestAbsentKeyStillErrorsForOtherKeys(t *testing.T) {
 	}
 }
 
-func TestDisplaySleepScope(t *testing.T) {
-	f := &fake{get: " displaysleep 0\n"}
+// `pmset -g` reports only the power source in use. Verifying a scoped write against it
+// meant that setting the AC value while running on battery read back the battery value
+// and reported a failure that never happened. Scoped writes must read back from
+// `pmset -g custom`.
+func TestScopedWriteReadsBackFromItsOwnScope(t *testing.T) {
+	f := &scopeFake{
+		// The live view shows battery, because that is the source in use.
+		live: " displaysleep 3\n",
+		custom: `Battery Power:
+ displaysleep         3
+AC Power:
+ displaysleep         20
+`,
+	}
 	c := &Control{R: f}
 
-	if err := c.SetDisplaySleep(context.Background(), AC, 0); err != nil {
+	if err := c.SetDisplaySleep(context.Background(), AC, 20); err != nil {
+		t.Fatalf("writing the AC value while on battery must verify against AC: %v", err)
+	}
+	if got := f.calls[0]; !equal(got, []string{"-c", "displaysleep", "20"}) {
+		t.Fatalf("args = %v", got)
+	}
+
+	// A genuine mismatch must still be caught.
+	if err := c.SetDisplaySleep(context.Background(), Battery, 20); err == nil {
+		t.Fatal("want a mismatch when the battery scope disagrees")
+	}
+}
+
+type scopeFake struct {
+	calls        [][]string
+	live, custom string
+}
+
+func (f *scopeFake) Run(_ context.Context, args ...string) (string, error) {
+	f.calls = append(f.calls, args)
+	if len(args) == 2 && args[0] == "-g" && args[1] == "custom" {
+		return f.custom, nil
+	}
+	if len(args) == 1 && args[0] == "-g" {
+		return f.live, nil
+	}
+	return "", nil
+}
+
+func TestDisableSleepStillUsesTheLiveView(t *testing.T) {
+	// disablesleep is global rather than per source, so it is read from `pmset -g`.
+	f := &scopeFake{live: " disablesleep 1\n", custom: "AC Power:\n displaysleep 20\n"}
+	c := &Control{R: f}
+	if err := c.SetDisableSleep(context.Background(), true); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.calls[0]; !equal(got, []string{"-c", "displaysleep", "0"}) {
-		t.Fatalf("args = %v", got)
+	if got := f.calls[1]; !equal(got, []string{"-g"}) {
+		t.Fatalf("want the live view for a global flag, got %v", got)
 	}
 }
 

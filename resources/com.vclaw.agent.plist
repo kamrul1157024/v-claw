@@ -6,6 +6,10 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/Applications/v-claw.app/Contents/MacOS/v-claw-app</string>
+		<!-- Started at login, so start quietly. A launch from Finder or Spotlight
+		     omits this and opens the window, which is what clicking an app icon
+		     is supposed to do. -->
+		<string>--background</string>
 	</array>
 	<key>RunAtLoad</key>          <true/>
 	<key>KeepAlive</key>          <false/>

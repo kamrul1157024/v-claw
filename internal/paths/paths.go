@@ -28,6 +28,10 @@ func StateFile() string {
 	return filepath.Join(dir, "state.json")
 }
 
+// LockFile guards against a second copy of the app running. It sits beside the state
+// file so it lands in whichever directory that resolved to.
+func LockFile() string { return filepath.Join(filepath.Dir(StateFile()), "app.lock") }
+
 // SharedStateFile is the path the privileged daemon watches. It never falls back,
 // because root must not read a state file out of one user's home directory.
 func SharedStateFile() string { return filepath.Join(sharedDir(), "state.json") }

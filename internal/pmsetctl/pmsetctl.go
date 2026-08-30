@@ -85,7 +85,7 @@ func (c *Control) set(ctx context.Context, s Scope, key string, val int) error {
 		return err
 	}
 
-	have, err := c.Get(ctx, key)
+	have, err := c.readBack(ctx, s, key)
 	if err != nil {
 		return err
 	}
@@ -93,6 +93,36 @@ func (c *Control) set(ctx context.Context, s Scope, key string, val int) error {
 		return &MismatchError{Key: key, Want: val, Have: have}
 	}
 	return nil
+}
+
+// readBack reads the value that was just written, from the same scope it was written
+// to.
+//
+// This has to go through `pmset -g custom` for a scoped write. `pmset -g` reports only
+// the power source in use, so setting the AC value while running on battery reads back
+// the battery value and looks like a failure that never happened.
+func (c *Control) readBack(ctx context.Context, s Scope, key string) (int, error) {
+	if s == All {
+		return c.Get(ctx, key)
+	}
+
+	battery, ac, err := c.Custom(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	vals := ac
+	if s == Battery {
+		vals = battery
+	}
+	v, ok := vals[key]
+	if !ok {
+		if absentMeansZero[key] {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("pmset: %q not present for scope %q", key, s)
+	}
+	return v, nil
 }
 
 // Get reads a live value from `pmset -g`.

@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -32,9 +33,27 @@ const poll = 5 * time.Second
 // version is reported by diagnostics. Kept in step with cmd/v-claw.
 const version = "0.1.0"
 
+// background is set by the login agent. Without it, launching v-claw opens the window,
+// because clicking an app icon and getting no visible response looks broken — doubly so
+// when the menu bar is full and the icon lands behind the notch.
+var background = flag.Bool("background", false, "start without opening the window")
+
 func main() {
+	flag.Parse()
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
 	log.SetPrefix("v-claw: ")
+
+	// Claim the lock before systray runs, so a second copy never reaches the point of
+	// drawing its own menu bar icon. Clicking the app icon while v-claw is already
+	// running should raise the window, not clone the app.
+	release, taken := claimSingleInstance()
+	if taken {
+		raiseRunningInstance()
+		log.Print("already running; asked the running copy to show its window")
+		return
+	}
+	defer release()
+
 	systray.Run(onReady, func() { log.Print("exited") })
 }
 
@@ -51,6 +70,10 @@ func onReady() {
 	a.buildMenu()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+
+	if !*background {
+		a.openWindow()
+	}
 
 	go a.run(ctx)
 	go func() {
