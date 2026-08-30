@@ -61,28 +61,37 @@ lint:
 # with a working app, which is the whole point of the two-tier design.
 install: install-app
 	@echo
-	@echo "==> the helper needs admin once, for guaranteed lid-close blocking"
-	@echo "    it is 3 lines; read them with: make explain"
-	@echo
-	@sudo sh scripts/install-daemon.sh || { \
-		echo; \
-		echo "helper not installed. v-claw still works:"; \
-		echo "  idle sleep and display sleep are blocked"; \
-		echo "  lid-close blocking is best effort"; \
-		echo "add it later with: sudo make install-daemon"; \
-	}
+	@if $(HELPER_RUNNING); then \
+		echo "helper already installed and running — nothing more to do"; \
+		exit 0; \
+	fi; \
+	echo "==> the helper needs admin once, for guaranteed lid-close blocking"; \
+	echo "    it is 3 lines; read them with: make explain"; \
+	echo; \
+	sudo sh scripts/install-daemon.sh || true; \
+	if $(HELPER_RUNNING); then exit 0; fi; \
+	echo; \
+	echo "helper not installed. v-claw still works:"; \
+	echo "  idle sleep and display sleep are blocked"; \
+	echo "  lid-close blocking is best effort"; \
+	echo "add it later with: sudo make install-daemon"
 
 # ---------------------------------------------------------------- no sudo
 
 UID := $(shell id -u)
 
+# Asking for a password v-claw does not need is its own kind of broken, and claiming
+# the helper is absent when it is running is worse. Both are decided by this, checked
+# before asking and again afterwards.
+HELPER_RUNNING = launchctl print system/com.vclaw.daemon 2>/dev/null | grep -q "state = running"
+
 install-app: app
 	@mkdir -p $(BINDIR) $(dir $(AGENT))
 	@# Stop the running copy before replacing its binary, or the copy lands under a
 	@# live process and the reload fails.
-	-@launchctl bootout gui/$(UID)/$(LABEL) 2>/dev/null
-	-@pkill -f "v-claw.app/Contents/MacOS/v-claw-app" 2>/dev/null
-	-@pkill -f "v-claw.app/Contents/MacOS/v-claw-ui" 2>/dev/null
+	@launchctl bootout gui/$(UID)/$(LABEL) 2>/dev/null || true
+	@pkill -f "v-claw.app/Contents/MacOS/v-claw-app" 2>/dev/null || true
+	@pkill -f "v-claw.app/Contents/MacOS/v-claw-ui" 2>/dev/null || true
 	@sleep 1
 	@# Prefer /Applications, but never require admin for it. If it is not writable
 	@# (a managed Mac, or a stale root-owned copy left by an old sudo install), fall
