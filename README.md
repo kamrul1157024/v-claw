@@ -20,6 +20,17 @@
 
 ---
 
+## Why it is called v-claw
+
+<img src="docs/images/claw.png" alt="A 3D-printed claw holding a laptop lid open" width="270" align="right">
+
+People 3D-print a little claw and wedge it into their laptop, so the lid cannot close
+and the machine keeps working while they walk away.
+
+v-claw is that, in software. No plastic required.
+
+<br clear="right">
+
 ## What it does
 
 Close the lid and your Mac sleeps. Leave it idle and the screen locks. That is usually
