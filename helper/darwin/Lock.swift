@@ -14,8 +14,17 @@ final class LockView: NSView {
     private let error = NSTextField(labelWithString: "")
     private let recovery = NSTextField(labelWithString: "")
     private let unlock = NSButton()
+    private let useRecovery = NSButton()
+    private let countdown = NSTextField(labelWithString: "")
     private var timer: Timer?
     private let wantsPassword: Bool
+
+    /// Recovery mode swaps the password field for a code field, and holds it shut until
+    /// a fresh code is due. Typing a code that is about to roll over is how people end
+    /// up entering three in a row and trusting none of them.
+    private var recoveryMode = false
+    private var armAt: Date?
+    private var focusedAfterArming = false
 
     init(frame: NSRect, message: String, unlockTitle: String, wantsPassword: Bool) {
         self.wantsPassword = wantsPassword
@@ -41,9 +50,7 @@ final class LockView: NSView {
         unlock.target = self
         unlock.action = #selector(unlockTapped)
 
-        field.placeholderString = TOTP.isConfigured
-            ? "Password or 6-digit code"
-            : "v-claw password"
+        field.placeholderString = "v-claw password"
         field.alignment = .center
         field.font = .systemFont(ofSize: 14)
         field.target = self
@@ -55,6 +62,21 @@ final class LockView: NSView {
         error.textColor = .systemRed
         error.isHidden = true
 
+        // Kept separate from the password. Mixing both into one field means every
+        // failure is ambiguous — wrong password, or wrong code, or the right code at
+        // the wrong moment — and the user cannot tell which.
+        useRecovery.title = "Use recovery code"
+        useRecovery.bezelStyle = .inline
+        useRecovery.isBordered = false
+        useRecovery.contentTintColor = NSColor.white.withAlphaComponent(0.55)
+        useRecovery.font = .systemFont(ofSize: 12)
+        useRecovery.target = self
+        useRecovery.action = #selector(enterRecovery)
+        useRecovery.isHidden = !(wantsPassword && TOTP.isConfigured)
+
+        style(countdown, size: 12, weight: .regular, alpha: 0.55)
+        countdown.isHidden = true
+
         // Always on screen for a password lock, never only after N failures. Someone
         // who cannot type at all never reaches a failure count, and they are exactly
         // the person who needs to know the way out.
@@ -64,7 +86,8 @@ final class LockView: NSView {
             : "Restart the Mac to clear this password"
         recovery.isHidden = !wantsPassword
 
-        [clock, date, status, field, error, unlock, recovery].forEach(addSubview)
+        [clock, date, status, field, error, unlock, useRecovery, countdown, recovery]
+            .forEach(addSubview)
 
         tick()
         // Honour Reduce Motion: this only updates text, never animates.
@@ -90,10 +113,55 @@ final class LockView: NSView {
         let d = DateFormatter(); d.dateFormat = "EEEE d MMMM"
         clock.stringValue = t.string(from: now)
         date.stringValue = d.string(from: now)
+        if recoveryMode { updateCountdown(now) }
         layoutStack()
     }
 
+    private func updateCountdown(_ now: Date) {
+        if let arm = armAt, now < arm {
+            let left = max(1, Int(arm.timeIntervalSince(now).rounded(.up)))
+            countdown.stringValue = "New code in \(left)s"
+            countdown.textColor = NSColor.white.withAlphaComponent(0.45)
+            field.isEnabled = false
+            return
+        }
+
+        field.isEnabled = true
+        field.placeholderString = "6-digit code"
+        if !focusedAfterArming {
+            focusedAfterArming = true
+            window?.makeFirstResponder(field)
+        }
+
+        let left = 30 - Int(now.timeIntervalSince1970) % 30
+        countdown.stringValue = "Code valid for \(left)s"
+        // Amber near the boundary, so nobody starts typing a code with three seconds
+        // left and blames the app when it is refused.
+        countdown.textColor = left <= 7
+            ? NSColor.systemOrange.withAlphaComponent(0.9)
+            : NSColor.white.withAlphaComponent(0.45)
+    }
+
     @objc private func unlockTapped() { Lock.shared.attemptUnlock(password: field.stringValue) }
+
+    /// Switches to code entry and waits for the next 30-second boundary, so whatever
+    /// the user types has a full window of life rather than the seconds left on a code
+    /// that was already half spent when they looked at it.
+    @objc private func enterRecovery() {
+        recoveryMode = true
+        focusedAfterArming = false
+        useRecovery.isHidden = true
+        countdown.isHidden = false
+        error.isHidden = true
+
+        field.stringValue = ""
+        field.isEnabled = false
+        field.placeholderString = "Waiting for a new code"
+
+        let now = Date().timeIntervalSince1970
+        armAt = Date(timeIntervalSince1970: (floor(now / 30) + 1) * 30)
+        tick()
+    }
 
     /// Changes the status line without disturbing anything the user has typed.
     func setMessage(_ text: String) {
@@ -107,6 +175,17 @@ final class LockView: NSView {
         error.stringValue = text
         error.isHidden = false
         field.stringValue = ""
+
+        // Stay in code entry after a bad code. Dropping back to the password would
+        // make the user re-enter recovery and wait out another boundary.
+        if recoveryMode {
+            focusedAfterArming = false
+            let now = Date().timeIntervalSince1970
+            armAt = Date(timeIntervalSince1970: (floor(now / 30) + 1) * 30)
+            field.isEnabled = false
+            field.placeholderString = "Waiting for a new code"
+        }
+
         window?.makeFirstResponder(field)
         layoutStack()
     }
@@ -126,8 +205,10 @@ final class LockView: NSView {
     private func layoutStack() {
         var fields: [NSView] = [clock, date, status]
         if wantsPassword { fields.append(field) }
+        if !countdown.isHidden { fields.append(countdown) }
         if !error.isHidden { fields.append(error) }
         fields.append(unlock)
+        if !useRecovery.isHidden { fields.append(useRecovery) }
         if wantsPassword { fields.append(recovery) }
 
         for f in fields where f !== field {
