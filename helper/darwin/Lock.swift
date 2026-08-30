@@ -6,7 +6,7 @@
 // because that lock is tied to display sleep.
 import AppKit
 
-final class LockView: NSView {
+final class LockView: NSView, NSTextFieldDelegate {
     private let clock = NSTextField(labelWithString: "")
     private let date = NSTextField(labelWithString: "")
     private let status = NSTextField(labelWithString: "")
@@ -55,6 +55,10 @@ final class LockView: NSView {
         field.font = .systemFont(ofSize: 14)
         field.target = self
         field.action = #selector(unlockTapped)
+        // The target/action alone is not dependable here: the field lives in a
+        // borderless window with no default button, and Return was reaching neither.
+        // The delegate hook is the documented way to catch it.
+        field.delegate = self
         field.isHidden = !wantsPassword
         field.setFrameSize(NSSize(width: 240, height: 26))
 
@@ -154,6 +158,17 @@ final class LockView: NSView {
     }
 
     @objc private func unlockTapped() { Lock.shared.attemptUnlock(password: field.stringValue) }
+
+    /// Return submits, the same as pressing Unlock.
+    ///
+    /// Typing a password and pressing Enter is the single most automatic thing anyone
+    /// does at a lock screen. Making them reach for a button instead is the sort of
+    /// friction that gets blamed on the password being wrong.
+    func control(_: NSControl, textView _: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard selector == #selector(NSResponder.insertNewline(_:)) else { return false }
+        unlockTapped()
+        return true
+    }
 
     /// Switches to code entry and waits for the next 30-second boundary, so whatever
     /// the user types has a full window of life rather than the seconds left on a code
