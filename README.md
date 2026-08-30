@@ -203,9 +203,17 @@ Two unlock policies:
 | Policy | Dismissed by | Use for |
 |---|---|---|
 | **Any key** | any key or click | A privacy screen. Coffee shop, shared desk. |
-| **Touch ID or password** | `LocalAuthentication` | A weak lock. Stops a colleague, not an attacker. |
+| **v-claw password** | a secret you set | Stops a colleague. Still not an attacker. |
 
-v-claw never sees, stores, or compares your password. The OS performs the check.
+**v-claw does not use your macOS password, deliberately.** Typing a login password into
+a full-screen window drawn by some app is exactly what a screen-locker phishing attack
+looks like, and that is not a habit worth building. A Touch ID option existed and was
+removed: the system prompt has a Cancel button, so it needed a fail-open valve, and that
+valve was itself a bypass — cancel three times and the lock opened.
+
+The password is stored as a salted PBKDF2 hash in the login Keychain, never in plain
+text and never in `state.json`. Forgot it? `v-claw lock-reset`, or just quit v-claw —
+it is a window, not a security boundary.
 
 ## On a managed Mac
 

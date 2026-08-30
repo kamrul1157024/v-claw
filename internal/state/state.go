@@ -25,8 +25,17 @@ const (
 type Policy string
 
 const (
+	// PolicyNone dismisses on any key. A privacy screen and nothing more.
 	PolicyNone Policy = "none"
-	PolicyAuth Policy = "auth"
+	// PolicyPassword uses v-claw's own password, kept in the Keychain. Deliberately
+	// not the macOS account password: prompting for that in a full-screen window is
+	// the shape of a phishing attack and trains the wrong reflex.
+	PolicyPassword Policy = "password"
+	// policyAuth was Touch ID with a macOS password fallback. Retired: the system
+	// prompt is a surface v-claw does not control, and the "fail open after three
+	// failures" valve it needed was itself the bypass — cancel three times and the
+	// lock opened. Existing values are coerced to PolicyNone on load.
+	policyAuth Policy = "auth"
 )
 
 // StaleAfter is how long the daemon waits on a silent heartbeat before releasing
@@ -87,7 +96,7 @@ func (s State) Validate() error {
 	}
 
 	switch s.Lock.Policy {
-	case PolicyNone, PolicyAuth:
+	case PolicyNone, PolicyPassword:
 	default:
 		return fmt.Errorf("%w: lock.policy %q", ErrInvalid, s.Lock.Policy)
 	}
@@ -131,6 +140,11 @@ func Load(path string) (State, error) {
 	var s State
 	if err := json.Unmarshal(b, &s); err != nil {
 		return State{}, fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	// A retired policy must not make the file unloadable, which would silently reset
+	// every other setting too.
+	if s.Lock.Policy == policyAuth {
+		s.Lock.Policy = PolicyNone
 	}
 	if err := s.Validate(); err != nil {
 		return State{}, err

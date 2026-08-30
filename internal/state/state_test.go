@@ -115,6 +115,37 @@ func TestLoadRejectsMalformed(t *testing.T) {
 	}
 }
 
+// The Touch ID policy was retired because it needed a fail-open valve that was itself
+// a bypass. An existing file naming it must still load: refusing would silently reset
+// every other setting the user had chosen.
+func TestRetiredAuthPolicyIsCoercedNotRejected(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "state.json")
+	body := `{"mode":"auto","block_lid_sleep":true,"keep_display_on":true,
+	          "lock":{"enabled":true,"policy":"auth","idle_minutes":5}}`
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Load(p)
+	if err != nil {
+		t.Fatalf("a retired policy must not make the file unloadable: %v", err)
+	}
+	if s.Lock.Policy != PolicyNone {
+		t.Fatalf("policy = %q, want %q", s.Lock.Policy, PolicyNone)
+	}
+	if s.Lock.IdleMinutes != 5 || s.Mode != ModeAuto {
+		t.Fatal("coercing the policy must not disturb the other settings")
+	}
+}
+
+func TestPasswordPolicyIsValid(t *testing.T) {
+	s := Default()
+	s.Lock.Policy = PolicyPassword
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSaveLoadRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "state.json")
 	want := Default()

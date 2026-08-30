@@ -66,10 +66,10 @@ fi
 # install that reports failure while leaving a root binary and a live daemon behind is
 # far worse than no install: the operator believes the machine is clean when it is not.
 rollback() {
-	echo "rolling back" >&2
+	printf '\nrolling back\n' >&2
 	launchctl bootout "system/$LABEL" 2>/dev/null || true
 	rm -f "$EXE" "$PLIST"
-	echo "removed $EXE and $PLIST; nothing of v-claw runs as root" >&2
+	printf 'removed %s and %s\nnothing of v-claw runs as root\n' "$EXE" "$PLIST" >&2
 }
 
 # Stop any previous instance and wait for launchd to actually let go. bootout is
@@ -98,13 +98,26 @@ if ! launchctl bootstrap system "$PLIST"; then
 	exit 1
 fi
 
-# Never report success on the strength of an exit code alone. Confirm the service is
-# actually running before telling anyone it is installed.
-if ! launchctl print "system/$LABEL" 2>/dev/null | grep -q "state = running"; then
-	echo "the service was loaded but is not running" >&2
-	rollback
-	exit 1
-fi
+# Never report success on the strength of an exit code alone: confirm the service is
+# actually running.
+#
+# Poll rather than check once. bootstrap returns as soon as launchd has accepted the
+# job, before it has spawned the process, so an immediate check reports a false failure
+# and the rollback then destroys a perfectly good install.
+i=0
+until launchctl print "system/$LABEL" 2>/dev/null | grep -q "state = running"; do
+	i=$((i + 1))
+	if [ $i -ge 40 ]; then
+		printf '\nthe service was loaded but never started\n' >&2
+		[ -f /var/log/v-clawd.log ] && {
+			echo "last lines of /var/log/v-clawd.log:" >&2
+			tail -5 /var/log/v-clawd.log >&2
+		}
+		rollback
+		exit 1
+	fi
+	sleep 0.25
+done
 
 echo
 echo "installed and running. verify with:"

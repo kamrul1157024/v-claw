@@ -39,7 +39,7 @@ If you need a real security boundary, use the real lock and accept the display s
 stdin and stdout.
 
 ```
--> lock {"policy":"auth","message":"..."}
+-> lock {"policy":"password","message":"..."}
 <- unlocked
 <- error covering display 2
 ```
@@ -65,35 +65,67 @@ Objective-C inside Go.
 
 ## Unlock policy
 
-Two options. The choice is the whole security story, so make it explicit at setup rather
-than burying it in a preference.
+Two options. The choice is the whole security story, so make it explicit at setup
+rather than burying it in a preference.
 
 | Policy | Dismissed by | Use for |
 |---|---|---|
-| `none` | any key or click | A privacy screen. Coffee shop table, shared office desk. Stops reading and casual use. |
-| `auth` | Touch ID, or the account password | A weak lock. Stops a colleague, not an attacker. |
+| `none` | any key or click | A privacy screen. Coffee shop table, shared office desk. |
+| `password` | v-claw's own password | Stops a colleague. Still not an attacker. |
 
-`none` is the honest default. It matches the original request, which was to avoid typing
-a password. It is also the only mode where v-claw makes no security claim at all.
+`none` is the honest default. It matches the original request, which was to avoid
+typing a password, and it is the only mode where v-claw makes no security claim at all.
 
-### How `auth` validates
+### Why not Touch ID or the macOS password
 
-Through `LocalAuthentication.framework`, with `LAPolicyDeviceOwnerAuthentication`. This
-gives Touch ID with a password fallback, and the OS performs the check.
+A `deviceOwnerAuthentication` policy was implemented and then **removed**. Two reasons,
+and the second is fatal.
 
-**v-claw never sees, stores, or compares a password.** Do not read the password field
-yourself. Do not call `dscl`. Do not invent a PIN. `LAContext.evaluatePolicy` is the only
-acceptable implementation. Anything else is a credential-handling bug waiting to happen.
+**It trains a dangerous reflex.** Asking someone to type their macOS account password
+into a full-screen window drawn by a third-party app is structurally identical to a
+screen-locker phishing attack. Building that habit is worse than anything this lock
+protects against.
 
-This lives in the Swift helper. `experiments/lockwin` already links the framework and
-calls `canEvaluatePolicy` successfully, so the binding is proven.
+**The escape valve was a bypass.** `LAContext` shows a system prompt with a Cancel
+button, over a window v-claw does not control. A broken or unavailable Touch ID could
+otherwise trap the user, so the implementation unlocked after three failures. That
+made the lock trivially defeatable: cancel three times and walk in. Removing the valve
+only trades a bypass for a trap. The option had to go.
+
+Do not reintroduce it. If it ever returns, it needs an escape that is neither
+auto-unlock nor a dead end, and no such escape has been found.
+
+### How the password is stored
+
+- **Never the password.** A random 16-byte salt and a PBKDF2-HMAC-SHA256 hash,
+  310,000 rounds.
+- **In the login Keychain**, so it is encrypted at rest. Never in `state.json`, which
+  is world-readable by design.
+- **Never over the protocol.** The Swift helper owns it end to end; the Go side never
+  sees it.
+- Verification is a constant-time compare. Repeated failures back off, up to 3 seconds.
+
+There is no auto-unlock after N failures, for the reason above. After five, the lock
+screen says how to get out instead.
+
+### Forgetting it
+
+This must stay cheap, because a lock that can trap you out of your own machine is worse
+than no lock.
+
+```sh
+v-claw lock-reset      # forgets the password, reverts the policy to `none`
+```
+
+Quitting v-claw also removes the lock, because it is a window and not a security
+boundary. That caps how strong this can ever be, and the cap is deliberate.
 
 ## Engaging the lock
 
 | Trigger | Behaviour |
 |---|---|
 | Menu, "Lock screen now" | Immediate |
-| Global hotkey | Immediate. Default `Ctrl+Cmd+Q`, configurable |
+| Global hotkey | Immediate. Default `Ctrl+Cmd+Q`. Needs Accessibility, so it is opt-in |
 | Idle timeout | After N minutes with no input. Default 5. Off by default |
 | Lid closed, then reopened | Engage on reopen, if the lock was armed |
 
@@ -139,14 +171,15 @@ not as a thing to fix with private APIs.
                         13:42
                     Saturday 30 August
 
-                    +-----------+
-                    |   claw    |     awake, held open
-                    +-----------+
+                  AC Power  ·  awake  ·  4h 12m
 
-                  AC Power  ·  tier 1  ·  4h 12m
-
-               Touch ID or press any key to unlock
+                    [ ................ ]
+                        [  Unlock  ]
 ```
+
+The button never names a credential, and the screen never says which one is expected.
+On a screen you have walked away from, that is free information for a passer-by, and
+the field itself already says what to do.
 
 Keep it sparse. No notification contents and no window titles. The point is that nothing
 private is on screen.
@@ -197,7 +230,8 @@ reach their own machine.
 
 | Failure | Behaviour |
 |---|---|
-| `LAContext` returns an error, or Touch ID is unavailable | Fall back to the OS password sheet, then to `none` after 3 failures. Show why. |
+| The password is wrong | Back off, up to 3 seconds. **Never auto-unlock**: that valve was the bypass that retired the Touch ID option. |
+| `policy` is `password` but none is set | Fail open. A credential that does not exist must not become a dead end. |
 | The window fails to cover a display | Do not engage at all. Report it. A partial cover is worse than none. |
 | The helper crashes while locked | The windows die with it. The machine is unlocked. Accepted. |
 | The helper hangs | The tray app kills it after a 5 s timeout on the unlock command. |
@@ -212,8 +246,11 @@ someone out.
 - Lock, then confirm every display is covered, including one plugged in after locking.
 - Lock, then try `Cmd+Tab`, `Cmd+Opt+Esc`, `Cmd+H`, Mission Control, and the hot corners.
 - With `policy: none`, confirm any key dismisses it.
-- With `policy: auth`, confirm Touch ID works and the password fallback works.
+- With `policy: password`, confirm a wrong password never opens the lock, however many
+  times it is tried.
+- Confirm `v-claw lock-reset` clears it and reverts the policy.
 - Confirm `pmset -g assertions` still shows v-claw while locked.
 - Confirm the display dims but never sleeps.
-- Cover a failing `LAContext` by denying Touch ID three times.
+- Set `policy: password` with no password stored, and confirm the lock fails open
+  rather than trapping the user.
 - `kill -9` the app while locked. Confirm the desktop returns.

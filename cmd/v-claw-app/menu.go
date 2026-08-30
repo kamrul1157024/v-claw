@@ -62,10 +62,10 @@ type menu struct {
 	blockLid, keepDisplay *systray.MenuItem
 	lidHint               *systray.MenuItem
 
-	lockNow                *systray.MenuItem
-	lockEnabled            *systray.MenuItem
-	policyNone, policyAuth *systray.MenuItem
-	idleOff, idle5, idle15 *systray.MenuItem
+	lockNow                    *systray.MenuItem
+	lockEnabled                *systray.MenuItem
+	policyNone, policyPassword *systray.MenuItem
+	idleOff, idle5, idle15     *systray.MenuItem
 
 	quit *systray.MenuItem
 }
@@ -104,7 +104,7 @@ func (a *app) buildMenu() {
 	m.lockEnabled = lock.AddSubMenuItemCheckbox("Enabled", "", false)
 	lock.AddSeparator()
 	m.policyNone = lock.AddSubMenuItemCheckbox("Any key unlocks", "A privacy screen only", false)
-	m.policyAuth = lock.AddSubMenuItemCheckbox("Touch ID or password", "", false)
+	m.policyPassword = lock.AddSubMenuItemCheckbox("v-claw password", "Set it in the window", false)
 	lock.AddSeparator()
 	m.idleOff = lock.AddSubMenuItemCheckbox("No idle lock", "", false)
 	m.idle5 = lock.AddSubMenuItemCheckbox("Lock after 5 min idle", "", false)
@@ -130,26 +130,26 @@ func (a *app) buildMenu() {
 	a.menu = m
 
 	clicks := map[*systray.MenuItem]event{
-		m.off:         {kind: evMode, mode: state.ModeOff},
-		m.always:      {kind: evMode, mode: state.ModeAlways},
-		m.auto:        {kind: evMode, mode: state.ModeAuto},
-		m.blockLid:    {kind: evBlockLid},
-		m.keepDisplay: {kind: evKeepDisplay},
-		t15:           {kind: evTimed, dur: 15 * time.Minute},
-		t1h:           {kind: evTimed, dur: time.Hour},
-		t4h:           {kind: evTimed, dur: 4 * time.Hour},
-		tUntil:        {kind: evTimed, dur: 0},
-		m.lockNow:     {kind: evLockNow},
-		m.lockEnabled: {kind: evLockEnabled},
-		m.policyNone:  {kind: evLockPolicy, policy: state.PolicyNone},
-		m.policyAuth:  {kind: evLockPolicy, policy: state.PolicyAuth},
-		m.idleOff:     {kind: evLockIdle, idleMinutes: 0},
-		m.idle5:       {kind: evLockIdle, idleMinutes: 5},
-		m.idle15:      {kind: evLockIdle, idleMinutes: 15},
-		openWin:       {kind: evOpenWindow},
-		perms:         {kind: evPermissions},
-		diagItem:      {kind: evDiagnostics},
-		m.quit:        {kind: evQuit},
+		m.off:            {kind: evMode, mode: state.ModeOff},
+		m.always:         {kind: evMode, mode: state.ModeAlways},
+		m.auto:           {kind: evMode, mode: state.ModeAuto},
+		m.blockLid:       {kind: evBlockLid},
+		m.keepDisplay:    {kind: evKeepDisplay},
+		t15:              {kind: evTimed, dur: 15 * time.Minute},
+		t1h:              {kind: evTimed, dur: time.Hour},
+		t4h:              {kind: evTimed, dur: 4 * time.Hour},
+		tUntil:           {kind: evTimed, dur: 0},
+		m.lockNow:        {kind: evLockNow},
+		m.lockEnabled:    {kind: evLockEnabled},
+		m.policyNone:     {kind: evLockPolicy, policy: state.PolicyNone},
+		m.policyPassword: {kind: evLockPolicy, policy: state.PolicyPassword},
+		m.idleOff:        {kind: evLockIdle, idleMinutes: 0},
+		m.idle5:          {kind: evLockIdle, idleMinutes: 5},
+		m.idle15:         {kind: evLockIdle, idleMinutes: 15},
+		openWin:          {kind: evOpenWindow},
+		perms:            {kind: evPermissions},
+		diagItem:         {kind: evDiagnostics},
+		m.quit:           {kind: evQuit},
 	}
 	for item, ev := range clicks {
 		go func(it *systray.MenuItem, e event) {
@@ -180,7 +180,7 @@ func (m *menu) render(v view) {
 
 	check(m.lockEnabled, v.lockEnabled)
 	check(m.policyNone, v.lockPolicy == state.PolicyNone)
-	check(m.policyAuth, v.lockPolicy == state.PolicyAuth)
+	check(m.policyPassword, v.lockPolicy == state.PolicyPassword)
 	check(m.idleOff, v.lockIdle == 0)
 	check(m.idle5, v.lockIdle == 5)
 	check(m.idle15, v.lockIdle == 15)

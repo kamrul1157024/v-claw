@@ -23,6 +23,7 @@ final class Panel: NSObject, NSWindowDelegate {
     private let timer = NSPopUpButton()
 
     private let lockEnabled = NSButton(checkboxWithTitle: "Enabled", target: nil, action: nil)
+    private let setPassword = NSButton(title: "Set password…", target: nil, action: nil)
     private var policyButtons: [String: NSButton] = [:]
     private let idle = NSPopUpButton()
 
@@ -56,7 +57,7 @@ final class Panel: NSObject, NSWindowDelegate {
 
     private func build() {
         let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 390, height: 720),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered, defer: false)
         w.title = "v-claw"
@@ -154,12 +155,21 @@ final class Panel: NSObject, NSWindowDelegate {
         lockEnabled.action = #selector(lockToggled)
         rows.append(lockEnabled)
 
-        for (key, title) in [("none", "Any key unlocks"), ("auth", "Touch ID or password")] {
+        for (key, title) in [
+            ("none", "Any key unlocks"),
+            ("password", "v-claw password"),
+        ] {
             let b = NSButton(radioButtonWithTitle: title, target: self, action: #selector(policyPicked(_:)))
             b.identifier = NSUserInterfaceItemIdentifier(key)
             policyButtons[key] = b
             rows.append(b)
         }
+
+        setPassword.bezelStyle = .rounded
+        setPassword.target = self
+        setPassword.action = #selector(editPassword)
+        rows.append(setPassword)
+
 
         idle.removeAllItems()
         idle.addItems(withTitles: idleChoices.map(\.0))
@@ -207,6 +217,9 @@ final class Panel: NSObject, NSWindowDelegate {
         lockEnabled.state = s.lockEnabled ? .on : .off
         policyButtons.forEach { $0.value.state = ($0.key == s.lockPolicy) ? .on : .off }
         policyButtons.values.forEach { $0.isEnabled = s.lockEnabled }
+        setPassword.isHidden = s.lockPolicy != "password"
+        setPassword.isEnabled = s.lockEnabled
+        setPassword.title = LockPassword.isSet ? "Change password…" : "Set password…"
         idle.isEnabled = s.lockEnabled
         idle.selectItem(at: idleChoices.firstIndex { $0.1 == s.lockIdleMinutes } ?? 0)
     }
@@ -238,6 +251,65 @@ final class Panel: NSObject, NSWindowDelegate {
     }
 
     @objc private func lockNow() { Event.send("lockNow") }
+
+    /// v-claw's own password, stored as a salted PBKDF2 hash in the Keychain. It never
+    /// travels over the protocol, so the Go side never handles it at all.
+    @objc private func editPassword() {
+        guard let window else { return }
+
+        let pw = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        pw.placeholderString = "New password"
+        let confirm = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        confirm.placeholderString = "Confirm"
+
+        let stack = NSStackView(views: [pw, confirm])
+        stack.orientation = .vertical
+        stack.spacing = 8
+        stack.frame = NSRect(x: 0, y: 0, width: 260, height: 56)
+
+        let alert = NSAlert()
+        alert.messageText = "v-claw lock password"
+        alert.informativeText = """
+        Used only for the virtual lock. This is not your macOS password.
+
+        Forgetting it locks nothing away: quitting v-claw removes the lock, because it         is a window, not a security boundary.
+        """
+        alert.accessoryView = stack
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        if LockPassword.isSet { alert.addButton(withTitle: "Remove") }
+
+        alert.beginSheetModal(for: window) { response in
+            switch response {
+            case .alertFirstButtonReturn:
+                guard !pw.stringValue.isEmpty else {
+                    return self.warn("The password cannot be empty.")
+                }
+                guard pw.stringValue == confirm.stringValue else {
+                    return self.warn("Those did not match.")
+                }
+                if LockPassword.set(pw.stringValue) {
+                    self.setPassword.title = "Change password…"
+                } else {
+                    self.warn("Could not save to the Keychain.")
+                }
+            case .alertThirdButtonReturn:
+                LockPassword.clear()
+                self.setPassword.title = "Set password…"
+                Event.send("setLock", ["policy": "none"])
+            default:
+                break
+            }
+        }
+    }
+
+    private func warn(_ text: String) {
+        guard let window else { return }
+        let a = NSAlert()
+        a.messageText = text
+        a.alertStyle = .warning
+        a.beginSheetModal(for: window, completionHandler: nil)
+    }
     @objc private func openPermissions() { Permissions.shared.show(state?.hotkeyEnabled ?? false) }
     @objc private func openDiagnostics() { Event.send("diagnose") }
     @objc private func quit() { Event.send("quit") }
