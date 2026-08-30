@@ -117,7 +117,14 @@ final class LockView: NSView, NSTextFieldDelegate {
     }
 
     required init?(coder: NSCoder) { nil }
-    deinit { timer?.invalidate() }
+    deinit { stop() }
+
+    /// Stops the clock timer. The run loop holds the timer, so without this the view
+    /// keeps ticking after the window is gone.
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
 
     private func style(_ f: NSTextField, size: CGFloat, weight: NSFont.Weight, alpha: CGFloat) {
         f.font = .monospacedDigitSystemFont(ofSize: size, weight: weight)
@@ -430,6 +437,7 @@ final class Lock: NSObject {
             w.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
             w.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
             w.isOpaque = true
+            w.isReleasedWhenClosed = false
             w.backgroundColor = .black
             w.ignoresMouseEvents = false
             w.contentView = LockView(frame: NSRect(origin: .zero, size: screen.frame.size),
@@ -577,15 +585,43 @@ final class Lock: NSObject {
     }
 
     private func finish() {
-        windows.forEach { $0.orderOut(nil) }
+        // Stop listening for screen changes BEFORE anything else.
+        //
+        // Clearing presentationOptions brings the menu bar and Dock back, which
+        // changes the screen layout, which posts didChangeScreenParameters. With the
+        // observer still attached, screensChanged fired and immediately re-covered
+        // every display. The lock released its state, said "unlocked", and put itself
+        // straight back on screen — which is exactly what was being seen.
+        NotificationCenter.default.removeObserver(
+            self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
+
+        // orderOut alone was leaving the window on screen. Tear it down properly:
+        // stop the per-second timer that keeps the view alive, drop the content view,
+        // then order out and close. Releasing the lock state while the window stayed
+        // up is the worst possible half-measure — the log said "unlocked" and the user
+        // was still looking at a lock.
+        for w in windows {
+            (w.contentView as? LockView)?.stop()
+            w.contentView = nil
+            w.orderOut(nil)
+            w.close()
+        }
         windows.removeAll()
         NSApp.presentationOptions = []
         authFailures = 0
         recovering = false
         recoveryFloor = nil
-        NotificationCenter.default.removeObserver(
-            self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
         Event.send("unlocked")
+
+        // Confirm the teardown actually took. A release that leaves the window up is
+        // exactly the failure this had, and it was invisible in the log.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            let stragglers = NSApp.windows.filter { $0 is LockWindow && $0.isVisible }
+            if !stragglers.isEmpty {
+                Event.send("error", ["message":
+                    "lock released but \(stragglers.count) window(s) still on screen"])
+            }
+        }
     }
 
     /// Lets the Go side drop the lock, for an expiring timer or a shutdown. The lock
