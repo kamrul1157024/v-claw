@@ -32,6 +32,12 @@ func StateFile() string {
 // file so it lands in whichever directory that resolved to.
 func LockFile() string { return filepath.Join(filepath.Dir(StateFile()), "app.lock") }
 
+// AppLog and DaemonLog are where each half writes. The daemon runs as root and logs
+// under /var/log; the app runs as you. Both are fixed paths because launchd needs a
+// literal string in the plist, not something resolved at runtime.
+func AppLog() string    { return "/tmp/v-claw.log" }
+func DaemonLog() string { return "/var/log/v-clawd.log" }
+
 // SharedStateFile is the path the privileged daemon watches. It never falls back,
 // because root must not read a state file out of one user's home directory.
 func SharedStateFile() string { return filepath.Join(sharedDir(), "state.json") }

@@ -88,44 +88,28 @@ type daemon struct {
 	pm     *pmsetctl.Control
 	pow    power.Controller
 	active bool
+
+	// last is the decision already reported, so only changes reach the log.
+	last decision
 }
 
 // apply is called on every state change and on every tick.
-func (d *daemon) apply(s state.State, err error) {
+func (d *daemon) apply(s state.State, loadErr error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	if err != nil {
-		// A missing file means the app has not run yet, which is not an error worth
-		// logging every tick. Anything else is malformed or hostile input: log it and
-		// release, but never act on a partial parse.
-		if !os.IsNotExist(err) {
-			log.Printf("ignoring unusable state: %v", err)
-		}
-		d.mustRelease(ctx)
-		return
+	onAC, acErr := d.pow.OnAC()
+	want := decide(s, loadErr, onAC, acErr, time.Now())
+
+	// Log the transition, not the tick. This runs every ten seconds, so logging
+	// unconditionally would bury the moments that matter under thousands of lines
+	// saying nothing changed.
+	if want.reason != d.last.reason || want.hold != d.last.hold {
+		log.Print(want)
+		d.last = want
 	}
 
-	now := time.Now()
-
-	// A crashed or force-quit app must not leave root holding the machine awake with
-	// no UI left to turn it off.
-	if s.Stale(now) {
-		if d.active {
-			log.Printf("app heartbeat is %s old, releasing", now.Sub(s.Heartbeat).Round(time.Second))
-		}
-		d.mustRelease(ctx)
-		return
-	}
-
-	onAC, err := d.pow.OnAC()
-	if err != nil {
-		log.Printf("cannot read power source, releasing: %v", err)
-		d.mustRelease(ctx)
-		return
-	}
-
-	if s.Wanted(onAC, now) && s.BlockLidSleep {
+	if want.hold {
 		d.mustHold(ctx, s)
 		return
 	}
@@ -156,10 +140,17 @@ func (d *daemon) hold(ctx context.Context, s state.State) error {
 		}
 	}
 	if !d.active {
-		log.Print("holding: lid-close sleep blocked")
+		log.Print("  pmset: disablesleep=1" + displaysleepNote(s))
 		d.active = true
 	}
 	return nil
+}
+
+func displaysleepNote(s state.State) string {
+	if s.KeepDisplayOn {
+		return ", displaysleep=0 on AC"
+	}
+	return ""
 }
 
 func (d *daemon) release(ctx context.Context) error {
@@ -170,7 +161,7 @@ func (d *daemon) release(ctx context.Context) error {
 		return err
 	}
 	if d.active {
-		log.Print("released")
+		log.Print("  pmset: disablesleep=0, displaysleep restored")
 		d.active = false
 	}
 	return nil

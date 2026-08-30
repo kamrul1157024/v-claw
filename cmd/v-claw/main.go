@@ -28,6 +28,7 @@ usage:
   v-claw on [duration]          always awake, optionally with a deadline
   v-claw auto                   awake only while on the power adapter
   v-claw off                    change nothing
+  v-claw logs [-f]              recent log lines from the app and the helper
   v-claw lock-reset             forget the virtual lock password
   v-claw diagnose               full report, including managed-Mac overrides
   v-claw version
@@ -56,6 +57,8 @@ func run(args []string) error {
 		return openWindow()
 	case "status":
 		return status()
+	case "logs":
+		return showLogs(args[1:])
 	case "lock-reset":
 		return lockReset()
 	case "diagnose":
@@ -98,6 +101,35 @@ func openWindow() error {
 	}
 	fmt.Println("asked v-claw to open its window")
 	return nil
+}
+
+// showLogs tails both halves of v-claw at once. Which half misbehaved is rarely
+// obvious up front, and correlating two files by hand at the moment something breaks
+// is exactly when nobody wants to be looking up paths.
+func showLogs(args []string) error {
+	follow := len(args) > 0 && (args[0] == "-f" || args[0] == "--follow")
+
+	var present []string
+	for _, p := range []string{paths.AppLog(), paths.DaemonLog()} {
+		if _, err := os.Stat(p); err == nil {
+			present = append(present, p)
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "note: %s does not exist yet\n", p)
+	}
+	if len(present) == 0 {
+		return fmt.Errorf("no logs yet; start v-claw and try again")
+	}
+
+	tailArgs := []string{"-n", "40"}
+	if follow {
+		tailArgs = append(tailArgs, "-f")
+	}
+	tailArgs = append(tailArgs, present...)
+
+	cmd := exec.Command("/usr/bin/tail", tailArgs...)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	return cmd.Run()
 }
 
 // lockReset forgets the virtual lock password. It is the escape hatch for a forgotten

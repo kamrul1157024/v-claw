@@ -14,5 +14,9 @@
 	<key>RunAtLoad</key>          <true/>
 	<key>KeepAlive</key>          <false/>
 	<key>ProcessType</key>        <string>Interactive</string>
+	<!-- Without these the app's output goes nowhere, so a problem that only shows up
+	     at login leaves no trace at all. -->
+	<key>StandardOutPath</key>    <string>/tmp/v-claw.log</string>
+	<key>StandardErrorPath</key>  <string>/tmp/v-claw.log</string>
 </dict>
 </plist>
